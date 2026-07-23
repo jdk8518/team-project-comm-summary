@@ -22,7 +22,8 @@ description: Create and maintain approved project walkthrough completion reports
 - 확인한 브랜치명을 사용하여 프로젝트 루트의 `walkthrough/<현재 브랜치명>/`에 저장한다.
 - 현재 브랜치가 `Gharam`이면 저장 위치는 `walkthrough/Gharam/`이다.
 - 브랜치명이 비어 있는 detached HEAD 상태이면 임의 폴더명을 만들지 말고 사용자에게 저장 경로를 확인받는다.
-- 파일명은 `YYYYMMDD_순번_커밋메시지.md` 형식을 사용한다.
+- 일반 작업 완료 보고서의 파일명은 `YYYYMMDD_순번_커밋메시지.md` 형식을 사용한다.
+- Pull Request 생성·갱신·푸시 작업의 완료 보고서는 처음부터 `YYYYMMDD_순번(PR)_커밋메시지.md` 형식을 사용한다. 이 보고서는 해당 PR이 완료된 뒤에 작성되므로, 이후 Pull Request 요약 대상에 포함하지 않는다.
 - 같은 날짜에는 기존 파일을 확인하여 `01`부터 `99`까지 순차적으로 번호를 부여한다.
 - 기존 보고서를 임의로 덮어쓰거나 삭제하지 않는다.
 
@@ -31,7 +32,7 @@ description: Create and maintain approved project walkthrough completion reports
 Pull Request를 새로 만들거나 기존 Pull Request를 갱신하기 전에 다음 절차를 수행한다.
 
 1. `git branch --show-current`으로 현재 브랜치를 확인하고 `walkthrough/<현재 브랜치명>/`을 찾는다.
-2. `YYYYMMDD_순번_커밋메시지.md` 형식이며 순번 뒤에 `(PR)`이 없는 walkthrough 문서를 모두 찾는다. `SKILL.md`는 대상에서 제외한다.
+2. `YYYYMMDD_순번_커밋메시지.md` 형식이며 순번 뒤에 `(PR)`이 없는 walkthrough 문서를 모두 찾는다. 이미 `(PR)` 표기가 있는 문서와 Pull Request 작업 완료 보고서는 요약 대상에서 제외한다. `SKILL.md`도 대상에서 제외한다.
 3. 대상 문서의 `작업 지시사항 원문`을 모두 읽고, 공통 목표·범위·요구를 빠뜨리지 않도록 하나의 서술형 존대말 문단으로 함축한다. 이 문단은 문맥이 자연스럽게 이어져야 하며, 목록으로 나열하지 않는다.
 4. 대상 문서의 수행 내용, 변경 파일, 검증 결과, 영향 범위, 남은 작업을 모두 읽고, 실제 완료 내용을 하나의 서술형 존대말 문단으로 함축한다. 이 문단도 문맥의 일관성을 유지하고, 확인하지 않은 사실을 추가하지 않는다.
 5. 두 요약 문단의 핵심 키워드를 다시 함축하여 Pull Request 제목을 한 문장의 존대말로 작성한다. 제목은 간단하고 명료한 평문으로 작성하며, Markdown·괄호·불필요한 접두어 없이 핵심 변경 키워드를 포함한다.
