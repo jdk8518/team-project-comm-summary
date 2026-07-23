@@ -1,6 +1,6 @@
 ---
 name: walkthrough-reporting
-description: Create and maintain approved project walkthrough completion reports. Use whenever a task has finished and Codex must document the work, including the original instruction, verified model information, measured execution time, token-usage availability, changes, and verification results.
+description: Create and maintain approved project walkthrough completion reports and prepare Pull Request summaries from unreflected walkthrough reports. Use whenever a task has finished and Codex must document the work, or when Codex must create or update a Pull Request that should summarize and mark included walkthrough reports.
 ---
 
 # Walkthrough 완료 보고서
@@ -12,6 +12,9 @@ description: Create and maintain approved project walkthrough completion reports
 3. 보고서의 저장 경로와 파일명을 제시하고 사용자에게 저장 승인을 요청한다.
 4. 사용자가 명시적으로 승인한 경우에만 파일을 저장한다.
 5. 저장 직전에 완료 시간을 기록하고 시작 시간과의 차이를 초 단위로 계산한다. 사용자 승인 대기 시간은 작업 실행 시간에 포함하지 않는다.
+6. 보고서를 저장한 뒤 `git status`와 `git diff`로 커밋 범위를 확인한다.
+7. 저장한 walkthrough 문서와 해당 작업에서 생성·수정한 파일만 스테이징하여 커밋한다. 관계없는 변경은 스테이징하지 않는다.
+8. 커밋 후 `git status`와 커밋 결과를 확인한다. 푸시와 Pull Request 생성은 사용자가 별도로 요청한 경우에만 수행한다.
 
 ## 저장 위치와 파일명
 
@@ -22,6 +25,25 @@ description: Create and maintain approved project walkthrough completion reports
 - 파일명은 `YYYYMMDD_순번_커밋메시지.md` 형식을 사용한다.
 - 같은 날짜에는 기존 파일을 확인하여 `01`부터 `99`까지 순차적으로 번호를 부여한다.
 - 기존 보고서를 임의로 덮어쓰거나 삭제하지 않는다.
+
+## Pull Request 반영 절차
+
+Pull Request를 새로 만들거나 기존 Pull Request를 갱신하기 전에 다음 절차를 수행한다.
+
+1. `git branch --show-current`으로 현재 브랜치를 확인하고 `walkthrough/<현재 브랜치명>/`을 찾는다.
+2. `YYYYMMDD_순번_커밋메시지.md` 형식이며 순번 뒤에 `(PR)`이 없는 walkthrough 문서를 모두 찾는다. `SKILL.md`는 대상에서 제외한다.
+3. 대상 문서를 모두 읽고, 각 문서의 제목과 핵심 수행 내용을 1~3문장으로 요약한다.
+4. Pull Request 메시지에 `## Walkthrough 요약` 섹션을 추가하고, 각 문서의 최종 파일명과 요약을 목록으로 삽입한다. 최종 파일명은 아래의 `(PR)` 표기를 적용한 이름을 사용한다.
+5. Pull Request가 성공적으로 생성되거나 갱신된 뒤에만, 반영한 문서의 파일명을 `YYYYMMDD_순번(PR)_커밋메시지.md` 형식으로 변경한다.
+6. 이름 변경과 관련된 작업 파일을 커밋하고 원격 브랜치에 푸시하여 Pull Request에 반영한다.
+7. Pull Request 생성·갱신·푸시 중 하나라도 실패하면 파일명을 변경하지 않고, 실패 원인을 보고한다.
+
+파일명에서 순번 뒤의 `(PR)` 표기는 해당 walkthrough 문서가 Pull Request 메시지에 요약되어 반영됐음을 뜻한다. 예시는 다음과 같다.
+
+```text
+변경 전: 20260723_01_add_claude_framework.md
+변경 후: 20260723_01(PR)_add_claude_framework.md
+```
 
 ## 모델과 토큰 기록
 
