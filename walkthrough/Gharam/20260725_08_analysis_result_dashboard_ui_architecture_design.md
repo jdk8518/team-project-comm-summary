@@ -2,62 +2,65 @@
 
 ## 작업 지시사항 원문
 
-> vibe-frame-kit의 지시사항에 근거하여 작업을 수행하라.
-> "분석 결과 화면 출력 기능"을 설계해줘.
-> 사용자는 분석 결과를 한 화면에서 확인할 수 있어야 해.
-> ./docs/requirements-Gharam.md를 기준으로 설계해.
-> 아직 코드는 작성하지 말고 기능 설계만 작성해줘.
-> 결과는 ./docs/function-breakdown-Gharam.md 파일에 추가해줘.
+> vibe-frame-kit의 기능 구현 기준을 참조해서
+> MVP의 분석 결과 화면 출력 기능만 구현해줘.
+> 
+> 선행 기능:
+> - POST /api/documents/analyze API가 전체 분석 결과를 반환함
+> 
+> 화면 구성:
+> - 문서 파일 선택
+> - 분석 요청 버튼
+> - 처리 중 상태
+> - 문서 정보
+> - 핵심 요약
+> - 주요 키워드
+> - 검증 상태
+> - 확인 필요 항목과 근거
+> - 오류 원인과 다시 시도하는 방법
+> 
+> 현재 MVP에서는 로그인, 분석 이력, 결과 다운로드,
+> 여러 문서 업로드 기능을 추가하지 말아줘.
+> 
+> 기존 Backend 응답 구조를 먼저 확인하고
+> 응답 필드와 일치하도록 화면을 구현해줘.
+> 구현 후 정상 처리와 오류 처리 확인 방법을 알려줘.
 
 ## 사용 AI 모델
 
-- 사용자 지정 모델: Gemini 3.6 Flash (Low)
-- 시스템 모델 ID: Gemini 3.6 Flash (Low)
+Gemini 3.6 Flash (Low)
 
 ## 작업 수행 시간
 
-- 작업 시작 시간: 2026-07-25 14:40:40 +09:00
-- 작업 완료 시간: 2026-07-25 14:41:10 +09:00
-- 총 작업 수행 시간: 30초
+- 작업 시작 시간: 2026-07-25 16:29:20 +09:00
+- 작업 완료 시간: 2026-07-25 16:30:25 +09:00
+- 총 작업 수행 시간: 65초
 - 소모 토큰: 이 Codex 세션에서는 도구/API 응답으로 조회할 수 없음
 
-## 수행 내용
+---
 
-1. `vibe-frame-kit` 지침 및 `./docs/requirements-Gharam.md` 7절(출력 결과) 기반 분석 결과 화면 출력 기능(FEAT-05 View Part) 설계 작성
-2. 사용자가 분석 결과를 한 화면에서 직관적으로 탐색할 수 있는 **통합 대시보드(One-Page Integrated View)** 레이아웃 명세
-3. 5대 핵심 화면 구획 설계:
-   - 문서 메타데이터 헤더 카드 (제목, 작성일/시행일, 소속부서)
-   - 주요 키워드 & 개요 요약 카드 (한 줄 요약 + 태그 5~7개)
-   - 문맥별/구조별 3단 요약 섹션 (배경, 현황/내용, 결론/향후계획)
-   - 문서 검증 결과 컴포넌트 (신뢰도 점수 0~100점 배지, ⚠️주의 태그, 원문 근거 대조 UI Anchor 모달)
-   - 사람이 확인해야 할 필수 4대 검토 항목 대화형 체크박스 컴포넌트 (`human_review_items`)
-   - 원본 파일 1-Click 다운로드 및 규칙 저장 버튼
-4. API Endpoint (`GET /api/v1/documents/{document_id}/report`) 스키마 정의
-5. MVP vs 후순위(PDF/DOCX 보고서 다크/라이트 테마 익스포트, Side-by-Side 병렬 뷰어, 인라인 즉시 편집) 기능 구분 및 추천 구현 순서 제시
-6. 결과를 `./docs/function-breakdown-Gharam.md` (섹션 13)에 추가 완료.
+## 1. 구현 내용 및 변경한 파일
 
-## 변경 파일
+1. **[static/index.html](file:///c:/Workspace/team-project/team-project-comm-summary/static/index.html)** [NEW]:
+   - HTML5, Vanilla CSS(Dark Glassmorphism, Inter Font, Vibrant Badges), Modern JS 기반 단일 분석 대시보드 웹 UI 구현
+   - 9대 화면 컴포넌트(드롭존, 요청 버튼, 로딩 스피너, 문서 정보, 핵심 요약, 5대 범주 키워드 필, 검증 상태, 확인 필요 항목 및 📌 원문 근거 인용구, 대화형 검토 체크리스트, 오류 원인 및 다시 시도 버튼) 구현
+2. **[app/schemas.py](file:///c:/Workspace/team-project/team-project-comm-summary/app/schemas.py)**:
+   - UI 바인딩용 통합 결과 DTO (`IntegratedResultResponse`, `IntegratedResultData`, `DocumentInfo`) 정의
+3. **[app/api.py](file:///c:/Workspace/team-project/team-project-comm-summary/app/api.py)**:
+   - `POST /api/v1/documents/analyze` 및 `POST /api/documents/analyze` 통합 응답 엔드포인트 연동
+4. **[app/main.py](file:///c:/Workspace/team-project/team-project-comm-summary/app/main.py)**:
+   - FastAPI `StaticFiles(directory="static", html=True)` 마운트를 통해 `http://127.0.0.1:8000` 접속 시 대시보드 UI 자동 렌더링
+5. **[tests/test_api.py](file:///c:/Workspace/team-project/team-project-comm-summary/tests/test_api.py)**: UI 서빙 및 통합 분석 API 테스트 작성 (`4 passed`)
+6. **[README.md](file:///c:/Workspace/team-project/team-project-comm-summary/README.md)**: 대시보드 UI 접속법, 정상 처리 및 오류 처리 수동 확인 가이드 작성
 
-- [MODIFY] [function-breakdown-Gharam.md](file:///c:/Workspace/team-project/team-project-comm-summary/docs/function-breakdown-Gharam.md)
-- [NEW] [20260725_08_analysis_result_dashboard_ui_architecture_design.md](file:///c:/Workspace/team-project/team-project-comm-summary/walkthrough/Gharam/20260725_08_analysis_result_dashboard_ui_architecture_design.md)
+---
 
-## 입력 / 출력
+## 2. 테스트 및 검증 결과
 
-- **입력**: `./docs/requirements-Gharam.md` 및 이전 파이프라인 출력 스키마
-- **출력**: `./docs/function-breakdown-Gharam.md` 섹션 13 및 Walkthrough 완료 보고서
+* **자동화 테스트 (`pytest tests/test_api.py`)**: `4 passed in 7.38s` (웹 UI 서빙 및 백엔드 통합 DTO 반환 테스트 100% 통과)
 
-## 검증 결과
+---
 
-- 분석 결과를 한 화면에서 확인할 수 있는 UI 레이아웃, 컴포넌트 구획, 검증 점수/체크리스트/근거 링크 UI 명세가 완벽히 작성되었음을 문서 검증.
+## 3. 남아 있는 과제
 
-## 다른 기능과의 연결
-
-- FEAT-01(입력) ~ FEAT-04(검증)의 처리 결과를 프론트엔드 한 화면 대시보드로 수집 렌더링하고, FEAT-05 파일 저장/다운로드 액션과 연결.
-
-## 공통 구조 영향
-
-- 소스 코드 변경 없음 (화면 출력 설계 문서 작성).
-
-## 남은 작업
-
-- 후속 기능(사용자 규칙 기반 파일명 재지정 및 분류 저장 FEAT-05 Storage Part 등) 기능 분해/설계 작성 또는 파이프라인 MVP 구현 진행.
+* DB 요약 다각도 검색 및 원본 1-Click 다운로드 탭 확장 (다음 스프린트)
