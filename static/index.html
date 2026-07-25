@@ -330,9 +330,11 @@
     .detail-empty { color: var(--text-sub); font-size: 0.9rem; padding: 1rem 0; }
     .detail-actions { display:flex; gap:0.6rem; flex-wrap:wrap; margin-top:1rem; }
     .detail-actions .btn-action { width:auto; margin-top:0; padding:0.65rem 0.85rem; font-size:0.82rem; }
-    .search-card-actions { display:flex; gap:0.45rem; margin-top:0.8rem; padding-top:0.75rem; border-top:1px solid rgba(148, 163, 184, 0.16); }
+    .search-card-actions { display:flex; gap:0.45rem; margin-top:0.8rem; padding-top:0.75rem; border-top:1px solid rgba(148, 163, 184, 0.16); align-items:center; }
     .search-card-actions button { border:1px solid rgba(148, 163, 184, 0.3); border-radius:6px; padding:0.38rem 0.7rem; color:#e2e8f0; background:rgba(51, 65, 85, 0.7); cursor:pointer; font-size:0.78rem; }
     .search-card-actions button:hover { background:rgba(96, 165, 250, 0.24); border-color:var(--accent-blue); }
+    .search-card-actions button.btn-delete-action { margin-left:auto; color:#f87171; border-color:rgba(239,68,68,0.4); background:rgba(239,68,68,0.15); }
+    .search-card-actions button.btn-delete-action:hover { background:rgba(239,68,68,0.3); border-color:#ef4444; }
     .markdown-viewer-content { max-height: 68vh; overflow:auto; color:#e2e8f0; line-height:1.7; }
     .markdown-viewer-content h1, .markdown-viewer-content h2, .markdown-viewer-content h3 { color:#93c5fd; margin:1rem 0 0.5rem; }
     .markdown-viewer-content p { margin:0.45rem 0; }
@@ -541,6 +543,44 @@
           <option value="AI개발팀">AI개발팀</option>
         </select>
         <button class="btn-action" style="width: 120px; margin-top:0;" onclick="executeSearch()">검색</button>
+      </div>
+
+      <div class="search-options-panel" style="margin-top: 1rem; margin-bottom: 1.2rem; padding: 0.8rem 1rem; background: rgba(15, 23, 42, 0.4); border: 1px solid var(--card-border); border-radius: 10px;">
+        <div style="font-size: 0.85rem; color: var(--text-sub); margin-bottom: 0.5rem; font-weight: 600;">
+          🎯 검색 대상 항목 선택 (체크된 항목 간 OR 연산, 폴더 조건과 AND 연산):
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 0.8rem 1.2rem; font-size: 0.85rem; color: var(--text-main);">
+          <label style="cursor: pointer; display: flex; align-items: center; gap: 0.3rem;">
+            <input type="checkbox" name="searchFields" value="filename" checked> 파일명
+          </label>
+          <label style="cursor: pointer; display: flex; align-items: center; gap: 0.3rem;">
+            <input type="checkbox" name="searchFields" value="overview" checked> 문서 개요
+          </label>
+          <label style="cursor: pointer; display: flex; align-items: center; gap: 0.3rem;">
+            <input type="checkbox" name="searchFields" value="keywords" checked> 키워드
+          </label>
+          <label style="cursor: pointer; display: flex; align-items: center; gap: 0.3rem;">
+            <input type="checkbox" name="searchFields" value="subject_purpose"> 문서 주제/목적
+          </label>
+          <label style="cursor: pointer; display: flex; align-items: center; gap: 0.3rem;">
+            <input type="checkbox" name="searchFields" value="main_contents"> 주요 내용
+          </label>
+          <label style="cursor: pointer; display: flex; align-items: center; gap: 0.3rem;">
+            <input type="checkbox" name="searchFields" value="conclusion"> 결론/핵심메시지
+          </label>
+          <label style="cursor: pointer; display: flex; align-items: center; gap: 0.3rem;">
+            <input type="checkbox" name="searchFields" value="core_structure"> 핵심 구조
+          </label>
+          <label style="cursor: pointer; display: flex; align-items: center; gap: 0.3rem;">
+            <input type="checkbox" name="searchFields" value="key_sentences"> 핵심 문장
+          </label>
+          <label style="cursor: pointer; display: flex; align-items: center; gap: 0.3rem;">
+            <input type="checkbox" name="searchFields" value="issues"> 검증 이슈
+          </label>
+          <label style="cursor: pointer; display: flex; align-items: center; gap: 0.3rem;">
+            <input type="checkbox" name="searchFields" value="raw_text"> 원문 텍스트
+          </label>
+        </div>
       </div>
 
       <div class="search-layout">
@@ -1068,6 +1108,12 @@
     const selectedFolder = folderQueryPath();
     if (selectedFolder) params.set('folder', selectedFolder);
 
+    const checkedBoxes = Array.from(document.querySelectorAll('input[name="searchFields"]:checked'));
+    const checkedValues = checkedBoxes.map(cb => cb.value);
+    if (checkedValues.length > 0) {
+      params.set('fields', checkedValues.join(','));
+    }
+
     try {
       const res = await fetch(`/api/v1/documents/search?${params.toString()}`);
       const data = await res.json();
@@ -1108,6 +1154,7 @@
         actions.className = 'search-card-actions';
         actions.appendChild(createSearchActionButton('수정', () => openSummaryModal(item.file_id)));
         actions.appendChild(createSearchActionButton('다운로드', () => downloadOriginal(item.file_id)));
+        actions.appendChild(createSearchActionButton('🗑️ 삭제', () => deleteDocumentFromList(item.file_id), 'btn-delete-action'));
         itemCard.appendChild(actions);
         listDiv.appendChild(itemCard);
       });
@@ -1117,15 +1164,35 @@
     }
   }
 
-  function createSearchActionButton(label, handler) {
+  function createSearchActionButton(label, handler, className = '') {
     const button = document.createElement('button');
     button.type = 'button';
     button.textContent = label;
+    if (className) button.className = className;
     button.onclick = (event) => {
       event.stopPropagation();
       handler();
     };
     return button;
+  }
+
+  async function deleteDocumentFromList(fileId) {
+    if (!confirm('정말로 이 문서를 삭제하시겠습니까? (삭제 후 복구 불가)')) return;
+    try {
+      const res = await fetch(`/api/v1/documents/${fileId}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showToast('문서가 성공적으로 삭제되었습니다.');
+        if (selectedSearchFileId === fileId) {
+          clearSearchDetail();
+        }
+        await executeSearch();
+      } else {
+        alert('삭제 실패: ' + (data.detail || data.message || '알 수 없는 오류'));
+      }
+    } catch (err) {
+      alert('삭제 중 오류 발생: ' + err.message);
+    }
   }
 
   async function viewSummaryMarkdown(fileId) {

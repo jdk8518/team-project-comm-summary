@@ -157,27 +157,21 @@ async def search_documents(
     keyword: Optional[str] = Query(None, description="검색어 (키워드, 요약문, 제목)"),
     department: Optional[str] = Query(None, description="소속 부서명"),
     folder: Optional[str] = Query(None, description="폴더 경로 필터 (해당 폴더 저장 문서만 반환)"),
+    fields: Optional[List[str]] = Query(None, description="검색 대상 체크 항목 목록"),
 ):
-    results = db.search_documents_in_db(keyword, department)
+    checked_fields_list: Optional[List[str]] = None
+    if fields:
+        parsed_fields = []
+        for f in fields:
+            parsed_fields.extend([item.strip() for item in f.split(",") if item.strip()])
+        checked_fields_list = parsed_fields
 
-    # 폴더 필터: 지정한 경우 saved_folder 또는 recommended_folder가 일치하는 문서만 반환
-    if folder and folder.strip():
-        try:
-            normalized = db.normalize_archive_folder_path(folder).rstrip("/")
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-        if not db.is_archive_root(normalized):
-            filtered = []
-            for item in results:
-                doc = db.get_document_by_id(item["file_id"])
-                if doc:
-                    doc_folder = db.normalize_archive_folder_path(
-                        doc.get("saved_folder") or doc.get("recommended_folder", "")
-                    ).rstrip("/")
-                    if doc_folder == normalized or doc_folder.startswith(f"{normalized}/"):
-                        filtered.append(item)
-            results = filtered
+    results = db.search_documents_in_db(
+        keyword=keyword,
+        department=department,
+        folder=folder,
+        checked_fields=checked_fields_list
+    )
 
     items = [SearchItem(**r) for r in results]
     return SearchResponse(success=True, total_count=len(items), data=items)
@@ -367,8 +361,9 @@ async def search_documents_alias(
     keyword: Optional[str] = Query(None),
     department: Optional[str] = Query(None),
     folder: Optional[str] = Query(None),
+    fields: Optional[List[str]] = Query(None),
 ):
-    return await search_documents(keyword, department, folder)
+    return await search_documents(keyword, department, folder, fields)
 
 @router.delete("/api/documents/{file_id}", include_in_schema=False)
 async def delete_document_alias(file_id: str):

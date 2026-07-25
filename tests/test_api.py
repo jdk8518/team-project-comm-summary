@@ -310,9 +310,54 @@ def test_db_health_reports_mvp_backend_and_limitation():
     body = res.json()
     assert body["success"] is True
     assert body["data"]["connected"] is True
-    assert body["data"]["backend"] == "in_memory"
-    assert body["data"]["persistent"] is False
+    assert body["data"]["backend"] == "sqlite"
+    assert body["data"]["persistent"] is True
     assert body["data"]["migration_recommendation"]
+
+
+def test_search_documents_with_checkbox_fields_or_operation_and_path_and_operation():
+    res = client.post(
+        "/api/v1/documents/analyze",
+        files={"file": ("체크박스_검색테스트.txt", FULL_DOC_CONTENT, "text/plain")}
+    )
+    assert res.status_code == 200
+    file_id = res.json()["data"]["file_id"]
+
+    save_res = client.post(
+        f"/api/v1/documents/{file_id}/save",
+        json={
+            "folder_path": "archive/search_test_folder",
+            "filename": "체크박스_검색테스트.txt",
+            "document_overview": ["특별한개요키워드XYZ"]
+        }
+    )
+    assert save_res.status_code == 200
+
+    search_fn = client.get("/api/v1/documents/search?keyword=검색테스트&fields=filename")
+    assert search_fn.status_code == 200
+    assert file_id in [item["file_id"] for item in search_fn.json()["data"]]
+
+    search_ov = client.get("/api/v1/documents/search?keyword=특별한개요키워드XYZ&fields=overview")
+    assert search_ov.status_code == 200
+    assert file_id in [item["file_id"] for item in search_ov.json()["data"]]
+
+    search_fail = client.get("/api/v1/documents/search?keyword=특별한개요키워드XYZ&fields=filename")
+    assert search_fail.status_code == 200
+    assert file_id not in [item["file_id"] for item in search_fail.json()["data"]]
+
+    search_or = client.get("/api/v1/documents/search?keyword=특별한개요키워드XYZ&fields=filename,overview")
+    assert search_or.status_code == 200
+    assert file_id in [item["file_id"] for item in search_or.json()["data"]]
+
+    search_and_path = client.get("/api/v1/documents/search?keyword=특별한개요키워드XYZ&folder=archive/search_test_folder&fields=overview")
+    assert search_and_path.status_code == 200
+    assert file_id in [item["file_id"] for item in search_and_path.json()["data"]]
+
+    search_diff_path = client.get("/api/v1/documents/search?keyword=특별한개요키워드XYZ&folder=archive/other_folder&fields=overview")
+    assert search_diff_path.status_code == 200
+    assert file_id not in [item["file_id"] for item in search_diff_path.json()["data"]]
+
+    client.delete(f"/api/v1/documents/{file_id}")
 
 
 def test_save_duplicate_original_uses_incrementing_sequence():

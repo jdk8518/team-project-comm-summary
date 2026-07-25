@@ -1,32 +1,222 @@
 import os
 import re
+import json
+import sqlite3
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
-from app.schemas import SummaryData, ValidationData
-
-# In-memory database store for MVP
-document_db: Dict[str, Dict[str, Any]] = {}
-document_files: Dict[str, bytes] = {}
+from app.schemas import (
+    SummaryData, ValidationData, AnalysisData, SummaryResult, ValidationResult
+)
 
 ARCHIVE_ROOT = "output"
+DB_PATH = os.path.join(ARCHIVE_ROOT, "documents.db")
+
+# In-memory document binary buffer for uploaded/archived raw bytes
+document_files: Dict[str, bytes] = {}
+
+# In-memory document dict index (kept in sync with SQLite DB)
+document_db: Dict[str, Dict[str, Any]] = {}
+
+
+def get_db_connection() -> sqlite3.Connection:
+    """Create a SQLite database connection with row factory."""
+    os.makedirs(ARCHIVE_ROOT, exist_ok=True)
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_sqlite_db() -> None:
+    """Initialize SQLite database table and load existing records into memory cache."""
+    os.makedirs(ARCHIVE_ROOT, exist_ok=True)
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS documents (
+                file_id TEXT PRIMARY KEY,
+                original_filename TEXT,
+                recommended_folder TEXT,
+                recommended_filename TEXT,
+                saved_folder TEXT,
+                saved_filename TEXT,
+                archived_path TEXT,
+                summary_path TEXT,
+                format TEXT,
+                size_bytes INTEGER,
+                uploaded_at TEXT,
+                department TEXT,
+                status TEXT,
+                file_path TEXT,
+                raw_text TEXT,
+                structured_content TEXT,
+                analysis_data TEXT,
+                summary_data TEXT,
+                validation_data TEXT,
+                created_at TEXT,
+                updated_at TEXT
+            )
+        """)
+        conn.commit()
+
+        # Load existing database records into memory cache on startup
+        cursor.execute("SELECT * FROM documents")
+        rows = cursor.fetchall()
+        for row in rows:
+            record = dict(row)
+            doc_id = record["file_id"]
+
+            # Reconstruct Pydantic object models from JSON text if present
+            if record.get("analysis_data"):
+                try:
+                    record["analysis_data"] = AnalysisData.model_validate_json(record["analysis_data"])
+                except Exception:
+                    try:
+                        record["analysis_data"] = AnalysisData(**json.loads(record["analysis_data"]))
+                    except Exception:
+                        pass
+
+            if record.get("summary_data"):
+                try:
+                    record["summary_data"] = SummaryData.model_validate_json(record["summary_data"])
+                except Exception:
+                    try:
+                        data_dict = json.loads(record["summary_data"])
+                        record["summary_data"] = SummaryData(
+                            file_id=doc_id,
+                            summary_result=SummaryResult(**data_dict.get("summary_result", data_dict))
+                        )
+                    except Exception:
+                        pass
+
+            if record.get("validation_data"):
+                try:
+                    record["validation_data"] = ValidationData.model_validate_json(record["validation_data"])
+                except Exception:
+                    try:
+                        data_dict = json.loads(record["validation_data"])
+                        record["validation_data"] = ValidationData(
+                            file_id=doc_id,
+                            validation_result=ValidationResult(**data_dict.get("validation_result", data_dict))
+                        )
+                    except Exception:
+                        pass
+
+            if record.get("structured_content") and isinstance(record["structured_content"], str):
+                try:
+                    record["structured_content"] = json.loads(record["structured_content"])
+                except Exception:
+                    pass
+
+            document_db[doc_id] = record
+
+
+# Initialize SQLite table on module load
+init_sqlite_db()
+
+
+def _serialize_pydantic(obj: Any) -> Optional[str]:
+    """Serialize Pydantic models or dicts to JSON string for SQLite storage."""
+    if obj is None:
+        return None
+    if hasattr(obj, "model_dump_json"):
+        return obj.model_dump_json()
+    if hasattr(obj, "json"):
+        return obj.json()
+    if isinstance(obj, (dict, list)):
+        return json.dumps(obj, ensure_ascii=False)
+    return str(obj)
+
+
+def save_doc_to_sqlite(doc: Dict[str, Any]) -> None:
+    """Insert or replace a document record in SQLite DB."""
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT OR REPLACE INTO documents (
+                file_id, original_filename, recommended_folder, recommended_filename,
+                saved_folder, saved_filename, archived_path, summary_path,
+                format, size_bytes, uploaded_at, department, status, file_path,
+                raw_text, structured_content, analysis_data, summary_data, validation_data,
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            doc.get("file_id"),
+            doc.get("original_filename"),
+            doc.get("recommended_folder"),
+            doc.get("recommended_filename"),
+            doc.get("saved_folder"),
+            doc.get("saved_filename"),
+            doc.get("archived_path"),
+            doc.get("summary_path"),
+            doc.get("format"),
+            doc.get("size_bytes"),
+            doc.get("uploaded_at"),
+            doc.get("department"),
+            doc.get("status"),
+            doc.get("file_path"),
+            doc.get("raw_text"),
+            _serialize_pydantic(doc.get("structured_content")),
+            _serialize_pydantic(doc.get("analysis_data")),
+            _serialize_pydantic(doc.get("summary_data")),
+            _serialize_pydantic(doc.get("validation_data")),
+            doc.get("created_at") or now_str,
+            now_str
+        ))
+        conn.commit()
+
+
+def delete_doc_from_sqlite(file_id: str) -> None:
+    """Delete a document record from SQLite DB."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM documents WHERE file_id = ?", (file_id,))
+        conn.commit()
 
 
 def get_database_status() -> Dict[str, Any]:
-    """Return an explicit health report for the MVP database backend."""
+    """Return an explicit health report for the SQLite database backend."""
     try:
         root_exists = os.path.isdir(ARCHIVE_ROOT)
+        db_exists = os.path.isfile(DB_PATH)
         return {
             "connected": True,
-            "backend": "in_memory",
-            "persistent": False,
+            "backend": "sqlite",
+            "persistent": True,
+            "db_path": DB_PATH,
+            "db_exists": db_exists,
             "document_count": len(document_db),
             "file_count": len(document_files),
             "archive_root": ARCHIVE_ROOT,
             "archive_root_exists": root_exists,
-            "migration_recommendation": "운영 환경에서는 SQLite 또는 PostgreSQL로 교체하고 DATABASE_URL 기반 저장소를 사용해야 합니다.",
+            "migration_recommendation": "SQLite 데이터베이스(output/documents.db)가 정상 연결되어 영구 저장 기능을 제공합니다.",
         }
     except Exception as exc:
-        return {"connected": False, "backend": "in_memory", "error": type(exc).__name__}
+        return {"connected": False, "backend": "sqlite", "error": type(exc).__name__}
+
+
+def normalize_archive_folder_path(folder_path: Optional[str]) -> str:
+    """Normalize every archive folder into the fixed output root."""
+    raw_path = (folder_path or "").strip().replace("\\", "/").strip("/")
+    root = ARCHIVE_ROOT.replace("\\", "/").strip("/")
+
+    if not raw_path or raw_path == root:
+        normalized = root
+    elif raw_path.startswith(f"{root}/"):
+        normalized = raw_path
+    else:
+        normalized = f"{root}/{raw_path}"
+
+    root_abs = os.path.abspath(root)
+    normalized_abs = os.path.abspath(normalized)
+    if os.path.commonpath([root_abs, normalized_abs]) != root_abs:
+        raise ValueError(f"Archive folder must be under {ARCHIVE_ROOT}.")
+
+    return normalized
+
+
+def is_archive_root(folder_path: Optional[str]) -> bool:
+    return normalize_archive_folder_path(folder_path).rstrip("/") == ARCHIVE_ROOT
 
 
 def build_unique_archive_filename(file_id: str, folder_path: str, now: Optional[datetime] = None) -> str:
@@ -84,8 +274,8 @@ def write_summary_markdown(file_id: str, archived_path: str) -> str:
         "",
     ])
     for item in getattr(summary, "main_contents_list", []) or []:
-        lines.append(f"### {item.category}")
-        lines.extend(f"- {point}" for point in item.points)
+        lines.append(f"### {getattr(item, 'category', '')}")
+        lines.extend(f"- {point}" for point in getattr(item, "points", []))
         lines.append("")
     lines.extend([
         "## 결론 및 핵심 메시지",
@@ -107,20 +297,20 @@ def write_summary_markdown(file_id: str, archived_path: str) -> str:
                 lines.append("")
             if getattr(analysis, "core_structure", None):
                 lines.append("### 핵심 구조")
-                lines.extend(f"- [{item.category}] {item.content_summary}" for item in analysis.core_structure)
+                lines.extend(f"- [{getattr(item, 'category', '')}] {getattr(item, 'content_summary', '')}" for item in analysis.core_structure)
                 lines.append("")
             if getattr(analysis, "key_sentences", None):
                 lines.append("### 핵심 문장")
-                lines.extend(f"- {item.text}" for item in analysis.key_sentences)
+                lines.extend(f"- {getattr(item, 'text', '')}" for item in analysis.key_sentences)
                 lines.append("")
         if getattr(validation, "issue_list", None):
             lines.append("### 검증 이슈")
             for issue in validation.issue_list:
-                lines.extend([f"- [{issue.issue_type}] {issue.issue_title}: {issue.reason_description}", f"  - 근거: {issue.relevant_original_evidence}"])
+                lines.extend([f"- [{getattr(issue, 'issue_type', '')}] {getattr(issue, 'issue_title', '')}: {getattr(issue, 'reason_description', '')}", f"  - 근거: {getattr(issue, 'relevant_original_evidence', '')}"])
             lines.append("")
         if getattr(validation, "human_review_checklist", None):
             lines.append("### 사람 확인 체크리스트")
-            lines.extend(f"- [{'x' if item.checked else ' '}] {item.title}: {item.description}" for item in validation.human_review_checklist)
+            lines.extend(f"- [{'x' if getattr(item, 'checked', False) else ' '}] {getattr(item, 'title', '')}: {getattr(item, 'description', '')}" for item in validation.human_review_checklist)
             lines.append("")
         if getattr(validation, "error_message", None):
             lines.extend([f"> 검증 오류: {validation.error_message}", ""])
@@ -129,85 +319,91 @@ def write_summary_markdown(file_id: str, archived_path: str) -> str:
     with open(markdown_path, "w", encoding="utf-8", newline="\n") as markdown_file:
         markdown_file.write("\n".join(lines).rstrip() + "\n")
     doc["summary_path"] = markdown_path
+    save_doc_to_sqlite(doc)
     return markdown_path
 
 
-def normalize_archive_folder_path(folder_path: Optional[str]) -> str:
-    """Normalize every archive folder into the fixed output root."""
-    raw_path = (folder_path or "").strip().replace("\\", "/").strip("/")
-    root = ARCHIVE_ROOT.replace("\\", "/").strip("/")
-
-    if not raw_path or raw_path == root:
-        normalized = root
-    elif raw_path.startswith(f"{root}/"):
-        normalized = raw_path
-    else:
-        normalized = f"{root}/{raw_path}"
-
-    root_abs = os.path.abspath(root)
-    normalized_abs = os.path.abspath(normalized)
-    if os.path.commonpath([root_abs, normalized_abs]) != root_abs:
-        raise ValueError(f"Archive folder must be under {ARCHIVE_ROOT}.")
-
-    return normalized
-
-
-def is_archive_root(folder_path: Optional[str]) -> bool:
-    return normalize_archive_folder_path(folder_path).rstrip("/") == ARCHIVE_ROOT
-
 def store_uploaded_document(file_id: str, original_filename: str, format_str: str, file_bytes: bytes, file_path: str):
-    """Store raw file bytes and initial metadata."""
+    """Store raw file bytes and initial metadata in memory and SQLite DB."""
     document_files[file_id] = file_bytes
-    
-    # Rule-based recommended folder and filename
-    rec_folder = f"output/archive/디지털혁신팀/"
+
+    rec_folder = "output/archive/디지털혁신팀/"
     stem, extension = os.path.splitext(os.path.basename(original_filename))
     rec_filename = f"{datetime.now().strftime('%Y-%m-%d')}_{stem}{extension}"
 
-    document_db[file_id] = {
+    doc = {
         "file_id": file_id,
         "original_filename": original_filename,
         "recommended_folder": rec_folder,
         "recommended_filename": rec_filename,
+        "saved_folder": None,
+        "saved_filename": None,
+        "archived_path": None,
+        "summary_path": None,
         "format": format_str,
         "size_bytes": len(file_bytes),
         "uploaded_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "status": "UPLOADED",
         "file_path": file_path,
-        "department": "디지털혁신팀"
+        "department": "디지털혁신팀",
+        "raw_text": None,
+        "structured_content": None,
+        "analysis_data": None,
+        "summary_data": None,
+        "validation_data": None,
+        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
+
+    document_db[file_id] = doc
+    save_doc_to_sqlite(doc)
+
 
 def update_document_recommendation(file_id: str, folder_path: str) -> bool:
     if file_id not in document_db:
         return False
-    document_db[file_id]["recommended_folder"] = normalize_archive_folder_path(folder_path)
+    doc = document_db[file_id]
+    doc["recommended_folder"] = normalize_archive_folder_path(folder_path)
+    save_doc_to_sqlite(doc)
     return True
 
 
 def update_document_extracted(file_id: str, raw_text: str, structured_content: Dict[str, Any]):
     if file_id in document_db:
-        document_db[file_id]["raw_text"] = raw_text
-        document_db[file_id]["structured_content"] = structured_content
-        document_db[file_id]["status"] = "EXTRACTED"
+        doc = document_db[file_id]
+        doc["raw_text"] = raw_text
+        doc["structured_content"] = structured_content
+        doc["status"] = "EXTRACTED"
+        save_doc_to_sqlite(doc)
+
 
 def update_document_analysis(file_id: str, analysis_data: Any):
     if file_id in document_db:
-        document_db[file_id]["analysis_data"] = analysis_data
-        document_db[file_id]["status"] = "ANALYZED"
+        doc = document_db[file_id]
+        doc["analysis_data"] = analysis_data
+        doc["status"] = "ANALYZED"
+        save_doc_to_sqlite(doc)
+
 
 def update_document_summary(file_id: str, summary_data: Any):
     if file_id in document_db:
-        document_db[file_id]["summary_data"] = summary_data
-        document_db[file_id]["status"] = "SUMMARIZED"
+        doc = document_db[file_id]
+        doc["summary_data"] = summary_data
+        doc["status"] = "SUMMARIZED"
+        save_doc_to_sqlite(doc)
+
 
 def update_document_validation(file_id: str, validation_data: Any):
     if file_id in document_db:
-        document_db[file_id]["validation_data"] = validation_data
+        doc = document_db[file_id]
+        doc["validation_data"] = validation_data
         validation_result = getattr(validation_data, "validation_result", None)
-        document_db[file_id]["status"] = "ERROR" if getattr(validation_result, "error_message", None) else "COMPLETED"
+        doc["status"] = "ERROR" if getattr(validation_result, "error_message", None) else "COMPLETED"
+        save_doc_to_sqlite(doc)
+
 
 def update_document_results(file_id: str, analysis_data: Any, summary_data: Any, validation_data: Any) -> bool:
-    """분석·요약·검증 결과를 한 트랜잭션 단위로 갱신하고 Markdown도 재생성한다."""
+    """Update AI analysis/summary/validation results in SQLite DB and regenerate Markdown."""
     if file_id not in document_db:
         return False
     doc = document_db[file_id]
@@ -218,22 +414,23 @@ def update_document_results(file_id: str, analysis_data: Any, summary_data: Any,
     archived_path = doc.get("archived_path")
     if archived_path:
         write_summary_markdown(file_id, archived_path)
+    else:
+        save_doc_to_sqlite(doc)
     return True
 
+
 def archive_and_save_document(file_id: str, folder_path: str, filename: str, document_overview: List[str], analysis_data: Any = None, summary_data: Any = None, verification_data: Any = None) -> Tuple[bool, str]:
-    """
-    Save original file to specified folder_path/filename and store updated summary in DB.
-    """
-    if file_id not in document_db or file_id not in document_files:
+    """Save original file to specified folder_path/filename and insert/update DB record in SQLite."""
+    if file_id not in document_db:
         return False, "문서를 찾을 수 없습니다."
 
     try:
         normalized_folder_path = normalize_archive_folder_path(folder_path)
         filename = build_unique_archive_filename(file_id, normalized_folder_path)
         archived_full_path = os.path.join(normalized_folder_path, filename)
-        
+
         # Save original file bytes to destination folder
-        file_bytes = document_files[file_id]
+        file_bytes = get_document_file_bytes(file_id)[0] if get_document_file_bytes(file_id) else b""
         with open(archived_full_path, "xb") as f:
             f.write(file_bytes)
 
@@ -243,11 +440,16 @@ def archive_and_save_document(file_id: str, folder_path: str, filename: str, doc
         doc["archived_path"] = archived_full_path
         doc["saved_folder"] = normalized_folder_path
         doc["saved_filename"] = filename
-        
+
         if "summary_data" in doc and doc["summary_data"]:
-            doc["summary_data"].summary_result.document_overview = document_overview
+            summary_obj = doc["summary_data"]
+            if hasattr(summary_obj, "summary_result"):
+                summary_obj.summary_result.document_overview = document_overview
+
         if analysis_data is not None and summary_data is not None and verification_data is not None:
             update_document_results(file_id, analysis_data, summary_data, verification_data)
+
+        save_doc_to_sqlite(doc)
         write_summary_markdown(file_id, archived_full_path)
 
         return True, archived_full_path
@@ -255,73 +457,204 @@ def archive_and_save_document(file_id: str, folder_path: str, filename: str, doc
     except Exception as e:
         return False, f"파일 저장 중 오류가 발생했습니다: {str(e)}"
 
-def search_documents_in_db(keyword: Optional[str] = None, department: Optional[str] = None) -> List[Dict[str, Any]]:
-    """Search DB records by keyword or department."""
+
+def _extract_field_text(doc: Dict[str, Any], field: str) -> str:
+    """Extract string content for a specified search field from document record."""
+    texts: List[str] = []
+
+    if field == "filename":
+        texts.append(doc.get("original_filename") or "")
+        texts.append(doc.get("saved_filename") or "")
+        texts.append(doc.get("recommended_filename") or "")
+
+    elif field == "overview":
+        summary_obj = doc.get("summary_data")
+        if summary_obj and hasattr(summary_obj, "summary_result"):
+            ov = summary_obj.summary_result.document_overview
+            if isinstance(ov, list):
+                texts.extend(ov)
+            elif ov:
+                texts.append(str(ov))
+
+    elif field == "keywords":
+        analysis = doc.get("analysis_data")
+        if analysis and hasattr(analysis, "key_keywords"):
+            kw = analysis.key_keywords
+            for attr in ("persons", "organizations", "schedules", "metrics", "concepts"):
+                items = getattr(kw, attr, []) or []
+                texts.extend(items)
+
+    elif field == "subject_purpose":
+        analysis = doc.get("analysis_data")
+        if analysis:
+            texts.append(getattr(analysis, "document_subject", "") or "")
+            texts.append(getattr(analysis, "document_purpose", "") or "")
+        summary_obj = doc.get("summary_data")
+        if summary_obj and hasattr(summary_obj, "summary_result"):
+            texts.append(getattr(summary_obj.summary_result, "document_purpose", "") or "")
+
+    elif field == "main_contents":
+        summary_obj = doc.get("summary_data")
+        if summary_obj and hasattr(summary_obj, "summary_result"):
+            for item in getattr(summary_obj.summary_result, "main_contents_list", []) or []:
+                texts.append(getattr(item, "category", "") or "")
+                texts.extend(getattr(item, "points", []) or [])
+
+    elif field == "conclusion":
+        summary_obj = doc.get("summary_data")
+        if summary_obj and hasattr(summary_obj, "summary_result"):
+            texts.append(getattr(summary_obj.summary_result, "conclusion_or_core_message", "") or "")
+
+    elif field == "core_structure":
+        analysis = doc.get("analysis_data")
+        if analysis and getattr(analysis, "core_structure", None):
+            for item in analysis.core_structure:
+                texts.append(getattr(item, "category", "") or "")
+                texts.append(getattr(item, "content_summary", "") or "")
+
+    elif field == "key_sentences":
+        analysis = doc.get("analysis_data")
+        if analysis and getattr(analysis, "key_sentences", None):
+            for item in analysis.key_sentences:
+                texts.append(getattr(item, "text", "") or "")
+
+    elif field == "issues":
+        val_obj = doc.get("validation_data")
+        if val_obj and hasattr(val_obj, "validation_result"):
+            val_res = val_obj.validation_result
+            for issue in getattr(val_res, "issue_list", []) or []:
+                texts.append(getattr(issue, "issue_title", "") or "")
+                texts.append(getattr(issue, "reason_description", "") or "")
+                texts.append(getattr(issue, "relevant_original_evidence", "") or "")
+
+    elif field == "raw_text":
+        texts.append(doc.get("raw_text") or "")
+
+    return " ".join(t for t in texts if t)
+
+
+def search_documents_in_db(
+    keyword: Optional[str] = None,
+    department: Optional[str] = None,
+    folder: Optional[str] = None,
+    checked_fields: Optional[List[str]] = None
+) -> List[Dict[str, Any]]:
+    """
+    Search SQLite document records with:
+    - Storage path (folder) & Department: AND operation
+    - Keyword match across selected checked_fields: OR operation
+    Default checked_fields: ['filename', 'overview', 'keywords']
+    """
+    if checked_fields is None or len(checked_fields) == 0:
+        checked_fields = ["filename", "overview", "keywords"]
+
     results = []
+    kw_clean = keyword.strip().lower() if keyword and keyword.strip() else None
+
+    # Path filter normalization
+    normalized_folder_filter = None
+    if folder and folder.strip():
+        try:
+            normalized_folder_filter = normalize_archive_folder_path(folder).rstrip("/")
+        except ValueError:
+            pass
+
     for doc_id, doc in document_db.items():
+        # 1. Department filter (AND condition)
         if department and department.strip() and doc.get("department") != department:
             continue
-        
-        match = True
-        if keyword and keyword.strip():
-            kw = keyword.strip().lower()
-            text_pool = f"{doc.get('original_filename', '')} {doc.get('saved_filename', '')} {doc.get('raw_text', '')}".lower()
-            if kw not in text_pool:
-                match = False
-        
-        if match:
-            # Build search item
-            summary_obj = doc.get("summary_data")
-            overview_text = ""
-            if summary_obj and hasattr(summary_obj, "summary_result"):
-                ov = summary_obj.summary_result.document_overview
-                overview_text = " ".join(ov) if isinstance(ov, list) else str(ov)
 
-            val_obj = doc.get("validation_data")
-            status_badge = val_obj.validation_result.status_badge if val_obj and hasattr(val_obj, "validation_result") else "확인 필요"
+        # 2. Folder / Storage path filter (AND condition)
+        if normalized_folder_filter and not is_archive_root(normalized_folder_filter):
+            doc_folder = normalize_archive_folder_path(
+                doc.get("saved_folder") or doc.get("recommended_folder", "")
+            ).rstrip("/")
+            if not (doc_folder == normalized_folder_filter or doc_folder.startswith(f"{normalized_folder_filter}/")):
+                continue
 
-            results.append({
-                "file_id": doc_id,
-                "original_filename": doc.get("original_filename", "file.pdf"),
-                "renamed_filename": doc.get("saved_filename", doc.get("recommended_filename", doc.get("original_filename"))),
-                "format": doc.get("format", "PDF"),
-                "department": doc.get("department", "디지털혁신팀"),
-                "uploaded_at": doc.get("uploaded_at", datetime.now().strftime("%Y-%m-%d")),
-                "one_line_summary": overview_text[:120] + ("..." if len(overview_text) > 120 else "") or "요약문이 생성되어 있습니다.",
-                "confidence_score": 92.5,
-                "status_badge": status_badge
-            })
+        # 3. Keyword match across selected checked_fields (OR condition across fields)
+        if kw_clean:
+            field_matched = False
+            for field_name in checked_fields:
+                field_text = _extract_field_text(doc, field_name)
+                if kw_clean in field_text.lower():
+                    field_matched = True
+                    break
+            if not field_matched:
+                continue
+
+        # Build item for API response
+        summary_obj = doc.get("summary_data")
+        overview_text = ""
+        if summary_obj and hasattr(summary_obj, "summary_result"):
+            ov = summary_obj.summary_result.document_overview
+            overview_text = " ".join(ov) if isinstance(ov, list) else str(ov)
+
+        val_obj = doc.get("validation_data")
+        status_badge = val_obj.validation_result.status_badge if val_obj and hasattr(val_obj, "validation_result") else "확인 필요"
+
+        results.append({
+            "file_id": doc_id,
+            "original_filename": doc.get("original_filename", "file.pdf"),
+            "renamed_filename": doc.get("saved_filename") or doc.get("recommended_filename") or doc.get("original_filename") or "document",
+            "format": doc.get("format", "PDF"),
+            "department": doc.get("department", "디지털혁신팀"),
+            "uploaded_at": doc.get("uploaded_at", datetime.now().strftime("%Y-%m-%d")),
+            "one_line_summary": overview_text[:120] + ("..." if len(overview_text) > 120 else "") or "요약문이 생성되어 있습니다.",
+            "confidence_score": 92.5,
+            "status_badge": status_badge
+        })
+
     return results
 
+
 def update_summary_content(file_id: str, one_line_summary: Optional[str] = None, overview_summary: Optional[List[str]] = None) -> bool:
-    """Update summary content in DB."""
+    """Update summary content in SQLite DB."""
     if file_id not in document_db:
         return False
     doc = document_db[file_id]
     if "summary_data" in doc and doc["summary_data"] and hasattr(doc["summary_data"], "summary_result"):
         if overview_summary is not None:
             doc["summary_data"].summary_result.document_overview = overview_summary
+        save_doc_to_sqlite(doc)
         if doc.get("archived_path"):
             write_summary_markdown(file_id, doc["archived_path"])
         return True
     return False
 
+
 def get_document_by_id(file_id: str) -> Optional[Dict[str, Any]]:
     return document_db.get(file_id)
+
 
 def get_document_file_bytes(file_id: str) -> Optional[Tuple[bytes, str]]:
     if file_id in document_files and file_id in document_db:
         return document_files[file_id], document_db[file_id]["original_filename"]
+    if file_id in document_db:
+        doc = document_db[file_id]
+        archived_path = doc.get("archived_path")
+        if archived_path and os.path.exists(archived_path):
+            with open(archived_path, "rb") as f:
+                content = f.read()
+            document_files[file_id] = content
+            return content, doc.get("original_filename", "document")
+        file_path = doc.get("file_path")
+        if file_path and os.path.exists(file_path):
+            with open(file_path, "rb") as f:
+                content = f.read()
+            document_files[file_id] = content
+            return content, doc.get("original_filename", "document")
     return None
 
+
 def delete_document_from_db(file_id: str) -> Tuple[bool, str]:
-    """DB 레코드 및 아카이빙 원본 파일을 삭제한다."""
+    """Delete document record from SQLite DB and remove archived/temp files from disk."""
     if file_id not in document_db:
         return False, "문서를 찾을 수 없습니다."
 
     doc = document_db[file_id]
 
-    # 1. 아카이빙된 원본 파일 물리 삭제 (존재하는 경우에만)
+    # 1. Remove archived file
     archived_path = doc.get("archived_path")
     if archived_path and os.path.exists(archived_path):
         try:
@@ -336,32 +669,28 @@ def delete_document_from_db(file_id: str) -> Tuple[bool, str]:
         except Exception as e:
             return False, f"요약 Markdown 삭제 중 오류: {str(e)}"
 
-    # 2. 임시 업로드 파일 물리 삭제
+    # 2. Remove temporary uploaded file
     temp_file_path = doc.get("file_path")
     if temp_file_path and os.path.exists(temp_file_path):
         try:
             os.remove(temp_file_path)
         except Exception:
-            pass  # 임시 파일 삭제 실패는 무시
+            pass
 
-    # 3. 인메모리 DB 레코드 및 바이너리 제거
+    # 3. Delete from SQLite DB and memory cache
+    delete_doc_from_sqlite(file_id)
     document_db.pop(file_id, None)
     document_files.pop(file_id, None)
 
     return True, f"문서 {file_id} 가 성공적으로 삭제되었습니다."
+
 
 def move_document_file(
     file_id: str,
     new_folder_path: str,
     new_filename: Optional[str] = None,
 ) -> Tuple[bool, str, str]:
-    """
-    아카이빙된 원본 파일을 새 경로로 이동하고 DB를 업데이트한다.
-
-    Returns:
-        (success, old_path, new_path)
-        실패 시 (False, "", 오류 메시지)
-    """
+    """Move archived document file to new folder path and update SQLite DB record."""
     if file_id not in document_db:
         return False, "", "문서를 찾을 수 없습니다."
 
@@ -369,7 +698,6 @@ def move_document_file(
     old_path: str = doc.get("archived_path", "")
     old_summary_path = doc.get("summary_path") or (summary_markdown_path(old_path) if old_path else None)
 
-    # 이동할 파일명 결정 (생략 시 기존 파일명 유지)
     filename = new_filename or doc.get("saved_filename") or doc.get("original_filename", "unknown")
 
     try:
@@ -383,12 +711,11 @@ def move_document_file(
             import shutil
             shutil.move(old_path, new_full_path)
         else:
-            # 아카이빙 파일이 없으면 인메모리 바이너리로 새로 생성
-            file_bytes = document_files.get(file_id)
-            if file_bytes is None:
+            file_bytes_tuple = get_document_file_bytes(file_id)
+            if file_bytes_tuple is None:
                 return False, "", "이동할 원본 파일 데이터가 존재하지 않습니다."
             with open(new_full_path, "wb") as f:
-                f.write(file_bytes)
+                f.write(file_bytes_tuple[0])
 
         new_summary_path = summary_markdown_path(new_full_path)
         if old_summary_path and os.path.abspath(old_summary_path) != os.path.abspath(new_summary_path):
@@ -396,10 +723,11 @@ def move_document_file(
                 import shutil
                 shutil.move(old_summary_path, new_summary_path)
 
-        # DB 경로 업데이트
+        # Update DB record & SQLite
         doc["archived_path"] = new_full_path
         doc["saved_folder"] = normalized_folder_path
         doc["saved_filename"] = filename
+        save_doc_to_sqlite(doc)
         write_summary_markdown(file_id, new_full_path)
 
         return True, old_path, new_full_path
@@ -407,11 +735,9 @@ def move_document_file(
     except Exception as e:
         return False, "", f"파일 이동 중 오류가 발생했습니다: {str(e)}"
 
+
 def get_existing_archive_folders() -> List[str]:
-    """
-    ARCHIVE_ROOT 하위에 실존하는 폴더 경로 목록을 반환한다.
-    루트가 없으면 빈 리스트를 반환한다.
-    """
+    """Return list of existing archive directories under ARCHIVE_ROOT."""
     if not os.path.isdir(ARCHIVE_ROOT):
         return []
 
@@ -419,34 +745,12 @@ def get_existing_archive_folders() -> List[str]:
     for dirpath, dirnames, _ in os.walk(ARCHIVE_ROOT):
         for d in dirnames:
             folders.append(os.path.join(dirpath, d).replace("\\", "/"))
-    # 루트 자체도 포함
     folders.insert(0, ARCHIVE_ROOT)
     return folders
 
 
 def get_folder_tree() -> Dict[str, Any]:
-    """
-    DB에 저장된 문서 레코드를 폴더 경로 기준으로 계층화하여 반환한다.
-
-    반환 구조:
-    {
-        "folders": {
-            "output/archive": {
-                "path": "output/archive",
-                "children": {
-                    "output/archive/디지털혁신팀": {
-                        "path": "output/archive/디지털혁신팀",
-                        "children": {},
-                        "files": [{"file_id": ..., "filename": ..., "uploaded_at": ...}]
-                    }
-                },
-                "files": []
-            }
-        },
-        "total_files": 3
-    }
-    """
-    # 폴더 트리를 dict로 표현. key = 정규화된 폴더 경로
+    """Return hierarchical folder tree of stored documents."""
     tree: Dict[str, Any] = {}
 
     def _ensure_node(path: str) -> Dict[str, Any]:
@@ -468,7 +772,6 @@ def get_folder_tree() -> Dict[str, Any]:
             "uploaded_at": uploaded_at,
         })
 
-        # 상위 폴더도 트리에 등록
         parts = folder.split("/")
         for i in range(1, len(parts)):
             parent = "/".join(parts[:i])
@@ -477,12 +780,9 @@ def get_folder_tree() -> Dict[str, Any]:
             _ensure_node(child)
             tree[parent]["children"][child] = tree[child]
 
-    # 루트가 없으면 빈 루트 생성
     if not tree:
         _ensure_node(ARCHIVE_ROOT)
 
-    # 최상위(루트) 노드만 골라서 반환
-    # — 다른 노드의 children에 포함된 경우 root가 아님
     all_children: set[str] = set()
     for node in tree.values():
         all_children.update(node["children"].keys())
