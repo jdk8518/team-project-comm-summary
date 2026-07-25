@@ -317,6 +317,21 @@
       margin-bottom: 1.5rem;
     }
 
+    .search-layout { display: grid; grid-template-columns: minmax(220px, 270px) minmax(0, 0.95fr) minmax(280px, 0.9fr); gap: 1.25rem; }
+    .folder-tree-panel, .search-detail-panel { border-right: 1px solid var(--card-border); padding-right: 1rem; min-height: 280px; }
+    .search-detail-panel { border-right: 0; border-left: 1px solid var(--card-border); padding-right: 0; padding-left: 1rem; }
+    .folder-tree-node { margin: 0.15rem 0; }
+    .folder-tree-row { display:flex; align-items:center; gap:0.35rem; width:100%; padding:0.38rem 0.45rem; color:var(--text-sub); background:transparent; border:0; border-radius:6px; text-align:left; cursor:pointer; }
+    .folder-tree-row:hover, .folder-tree-row.selected { color:#f1f5f9; background:rgba(96, 165, 250, 0.15); }
+    .folder-tree-children { margin-left:1rem; padding-left:0.45rem; border-left:1px solid rgba(148, 163, 184, 0.2); }
+    .selected-folder-label { color:var(--accent-blue); font-size:0.82rem; min-height:1.2rem; margin:-0.8rem 0 0.9rem; }
+    .search-card-item.selected { border-color: var(--accent-blue); background: rgba(96, 165, 250, 0.14); }
+    .detail-empty { color: var(--text-sub); font-size: 0.9rem; padding: 1rem 0; }
+    .detail-actions { display:flex; gap:0.6rem; flex-wrap:wrap; margin-top:1rem; }
+    .detail-actions .btn-action { width:auto; margin-top:0; padding:0.65rem 0.85rem; font-size:0.82rem; }
+    @media (max-width: 1040px) { .search-layout { grid-template-columns:minmax(210px, 260px) minmax(0, 1fr); } .search-detail-panel { grid-column:1 / -1; border-left:0; border-top:1px solid var(--card-border); padding:1rem 0 0; } }
+    @media (max-width: 760px) { .search-bar { flex-direction:column; } .search-layout { grid-template-columns:1fr; } .folder-tree-panel { border-right:0; border-bottom:1px solid var(--card-border); padding:0 0 1rem; } }
+
     .search-card-item {
       background: rgba(30, 41, 59, 0.5);
       border: 1px solid var(--card-border);
@@ -425,7 +440,7 @@
         <div class="section-title"><span>📁</span> 추천 아카이빙 경로 및 파일명 (수정 가능)</div>
         <div style="margin-bottom: 1rem;">
           <label style="font-size: 0.85rem; color: var(--text-sub);">추천 저장 폴더 경로</label>
-          <input type="text" class="form-input" id="editFolder" placeholder="예: output/archive/디지털혁신팀/">
+          <input type="text" class="form-input" id="editFolder" placeholder="예: archive/디지털혁신팀/">
         </div>
         <div>
           <label style="font-size: 0.85rem; color: var(--text-sub);">추천 재지정 파일명</label>
@@ -506,7 +521,20 @@
         <button class="btn-action" style="width: 120px; margin-top:0;" onclick="executeSearch()">검색</button>
       </div>
 
-      <div id="searchResultsList"></div>
+      <div class="search-layout">
+        <aside class="folder-tree-panel" aria-label="파일 저장 폴더 구조">
+          <div class="section-title" style="font-size:0.95rem; margin-bottom:0.7rem;"><span>📁</span> 파일 저장 폴더</div>
+          <div id="folderTree" role="tree"></div>
+        </aside>
+        <section>
+          <div id="selectedFolderLabel" class="selected-folder-label"></div>
+          <div id="searchResultsList"></div>
+        </section>
+        <aside class="search-detail-panel" aria-label="archived document detail">
+          <div class="section-title" style="font-size:0.95rem; margin-bottom:0.7rem;"><span>📄</span> 상세 요약</div>
+          <div id="searchDetailPanel" class="detail-empty"></div>
+        </aside>
+      </div>
     </div>
   </div>
 
@@ -528,7 +556,7 @@
     <div style="margin-bottom: 1.2rem;">
       <label style="font-size: 0.85rem; color: var(--text-sub); display:block; margin-bottom:0.4rem;">📁 저장 경로 (수정 가능)</label>
       <div style="display:flex; gap:0.6rem; align-items:center;">
-        <input type="text" class="form-input" id="modalFolderPath" placeholder="예: output/archive/디지털혁신팀" style="margin-top:0; flex:1;">
+        <input type="text" class="form-input" id="modalFolderPath" placeholder="예: archive/디지털혁신팀" style="margin-top:0; flex:1;">
         <button class="btn-action" style="width:90px; margin-top:0; font-size:0.8rem; padding:0.5rem 0.7rem;" onclick="loadFolderRecommend()">
           🔍 경로 추천
         </button>
@@ -551,6 +579,29 @@
   let selectedFile = null;
   let currentFileId = null;
   let activeModalFileId = null;
+  let selectedFolderPath = '';
+  let highlightedFileId = null;
+  let selectedSearchFileId = null;
+  const expandedFolderPaths = new Set();
+
+  const ARCHIVE_ROOT = 'output';
+
+  function normalizeArchivePath(path) {
+    const cleanPath = (path || '').trim().replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+    if (!cleanPath || cleanPath === ARCHIVE_ROOT) return ARCHIVE_ROOT;
+    return cleanPath.startsWith(`${ARCHIVE_ROOT}/`) ? cleanPath : `${ARCHIVE_ROOT}/${cleanPath}`;
+  }
+
+  function displayArchivePath(path) {
+    const normalized = normalizeArchivePath(path);
+    return normalized === ARCHIVE_ROOT ? '' : normalized.replace(/^output\/?/, '');
+  }
+
+  function folderQueryPath() {
+    return selectedFolderPath && normalizeArchivePath(selectedFolderPath) !== ARCHIVE_ROOT
+      ? normalizeArchivePath(selectedFolderPath)
+      : '';
+  }
 
   function switchTab(tabName) {
     document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
@@ -562,6 +613,7 @@
     } else {
       document.getElementById('tabSearchBtn').classList.add('active');
       document.getElementById('tabSearch').classList.add('active');
+      refreshFolderTree();
       executeSearch();
     }
   }
@@ -637,7 +689,7 @@
   async function submitSave() {
     if (!currentFileId) return;
 
-    const folderPath = document.getElementById('editFolder').value.trim();
+    const folderPath = normalizeArchivePath(document.getElementById('editFolder').value);
     const filename = document.getElementById('editFilename').value.trim();
     const overviewRaw = document.getElementById('editOverview').value;
     const overviewList = overviewRaw.split('\n').map(s => s.trim()).filter(s => s.length > 0);
@@ -661,6 +713,12 @@
       const resData = await response.json();
       if (response.ok && resData.success) {
         showToast(`✨ ${resData.message} (보관 경로: ${resData.archived_file_path})`);
+        selectedFolderPath = folderPath.replace(/\\/g, '/').replace(/\/$/, '');
+        highlightedFileId = currentFileId;
+        expandFolderAncestors(selectedFolderPath);
+        switchTab('search');
+        await refreshFolderTree();
+        await executeSearch();
       } else {
         alert(resData.detail || '저장 중 실패했습니다.');
       }
@@ -689,7 +747,7 @@
     document.getElementById('resUploadedAt').textContent = info.uploaded_at || '-';
 
     const arch = data.archiving_info || {};
-    document.getElementById('editFolder').value = arch.recommended_folder || 'output/archive/디지털혁신팀/';
+    document.getElementById('editFolder').value = displayArchivePath(arch.recommended_folder || 'output/archive/디지털혁신팀/');
     document.getElementById('editFilename').value = arch.recommended_filename || info.original_filename;
 
     const sData = data.summary_data || {};
@@ -781,26 +839,120 @@
   // =================================================================
   // Tab 2: Search & Detail Modal Implementation
   // =================================================================
+  async function refreshFolderTree() {
+    const treeDiv = document.getElementById('folderTree');
+    treeDiv.innerHTML = '<p style="color:var(--text-sub); font-size:0.85rem;">폴더 조회 중...</p>';
+
+    try {
+      const res = await fetch('/api/v1/documents/folder-tree');
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        treeDiv.innerHTML = '<p style="color:#f87171; font-size:0.85rem;">폴더 구조를 불러올 수 없습니다.</p>';
+        return;
+      }
+
+      const rootNode = { path: ARCHIVE_ROOT, children: {}, files: [] };
+      Object.values(data.folders || {}).forEach(node => {
+        if (normalizeArchivePath(node.path) === ARCHIVE_ROOT) {
+          Object.assign(rootNode, node, { path: ARCHIVE_ROOT });
+        } else {
+          rootNode.children[normalizeArchivePath(node.path)] = node;
+        }
+      });
+
+      if (!selectedFolderPath) selectedFolderPath = ARCHIVE_ROOT;
+      expandedFolderPaths.add(ARCHIVE_ROOT);
+      treeDiv.innerHTML = '';
+      treeDiv.appendChild(createFolderTreeNode(rootNode, true));
+    } catch (err) {
+      treeDiv.innerHTML = `<p style="color:#f87171; font-size:0.85rem;">오류: ${err.message}</p>`;
+    }
+  }
+
+  function createFolderTreeNode(node, isRoot = false) {
+    const normalizedPath = normalizeArchivePath(node.path);
+    const children = Object.values(node.children || {});
+    const wrapper = document.createElement('div');
+    const row = document.createElement('button');
+
+    wrapper.className = 'folder-tree-node';
+    row.type = 'button';
+    row.className = `folder-tree-row ${normalizeArchivePath(selectedFolderPath) === normalizedPath ? 'selected' : ''}`;
+    row.textContent = `${children.length > 0 ? (expandedFolderPaths.has(normalizedPath) ? '▾' : '▸') : '•'} ${isRoot ? '파일 저장 폴더' : normalizedPath.split('/').pop()}`;
+    row.onclick = () => {
+      selectedFolderPath = normalizedPath;
+      if (children.length > 0) {
+        if (expandedFolderPaths.has(normalizedPath)) expandedFolderPaths.delete(normalizedPath);
+        else expandedFolderPaths.add(normalizedPath);
+      }
+      refreshFolderTree();
+      executeSearch();
+    };
+    wrapper.appendChild(row);
+
+    if (expandedFolderPaths.has(normalizedPath) && children.length > 0) {
+      const childBox = document.createElement('div');
+      childBox.className = 'folder-tree-children';
+      children
+        .sort((a, b) => normalizeArchivePath(a.path).localeCompare(normalizeArchivePath(b.path)))
+        .forEach(child => childBox.appendChild(createFolderTreeNode(child)));
+      wrapper.appendChild(childBox);
+    }
+
+    return wrapper;
+  }
+
+  function expandFolderAncestors(path) {
+    const parts = normalizeArchivePath(path).split('/');
+    for (let i = 1; i <= parts.length; i++) {
+      expandedFolderPaths.add(parts.slice(0, i).join('/'));
+    }
+  }
+
+  function clearSearchDetail() {
+    selectedSearchFileId = null;
+    activeModalFileId = null;
+    document.getElementById('searchDetailPanel').className = 'detail-empty';
+    document.getElementById('searchDetailPanel').innerHTML = '';
+  }
+
   async function executeSearch() {
     const kw = document.getElementById('searchInput').value.trim();
     const dept = document.getElementById('deptSelect').value;
+    const params = new URLSearchParams();
+    if (kw) params.set('keyword', kw);
+    if (dept) params.set('department', dept);
+    const selectedFolder = folderQueryPath();
+    if (selectedFolder) params.set('folder', selectedFolder);
 
     try {
-      const res = await fetch(`/api/v1/documents/search?keyword=${encodeURIComponent(kw)}&department=${encodeURIComponent(dept)}`);
+      const res = await fetch(`/api/v1/documents/search?${params.toString()}`);
       const data = await res.json();
 
       const listDiv = document.getElementById('searchResultsList');
+      const labelDiv = document.getElementById('selectedFolderLabel');
       listDiv.innerHTML = '';
+      labelDiv.textContent = selectedFolder
+        ? `선택 폴더: ${displayArchivePath(selectedFolder)} 하위 전체`
+        : '선택 폴더: 파일 저장 폴더 전체';
 
       if (!data.data || data.data.length === 0) {
         listDiv.innerHTML = '<p style="text-align: center; color: var(--text-sub); padding: 2rem;">검색 조건에 해당되는 저장 문서가 없습니다.</p>';
+        clearSearchDetail();
         return;
+      }
+
+      if (!selectedSearchFileId || !data.data.some(item => item.file_id === selectedSearchFileId)) {
+        selectedSearchFileId = highlightedFileId && data.data.some(item => item.file_id === highlightedFileId)
+          ? highlightedFileId
+          : data.data[0].file_id;
       }
 
       data.data.forEach(item => {
         const itemCard = document.createElement('div');
-        itemCard.className = 'search-card-item';
-        itemCard.onclick = () => openSummaryModal(item.file_id);
+        itemCard.className = `search-card-item ${item.file_id === selectedSearchFileId ? 'selected' : ''}`;
+        itemCard.dataset.searchFileId = item.file_id;
+        itemCard.onclick = () => selectSearchFile(item.file_id);
         itemCard.innerHTML = `
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 0.4rem;">
             <h4 style="font-size: 1.05rem; color: #60a5fa;">📄 ${item.renamed_filename || item.original_filename}</h4>
@@ -819,8 +971,122 @@
         listDiv.appendChild(itemCard);
       });
 
+      await selectSearchFile(selectedSearchFileId);
+
     } catch (err) {
       alert('검색 중 오류 발생: ' + err.message);
+    }
+  }
+
+  async function selectSearchFile(fileId) {
+    selectedSearchFileId = fileId;
+    activeModalFileId = fileId;
+    document.querySelectorAll('.search-card-item').forEach(card => {
+      card.classList.toggle('selected', card.dataset.searchFileId === fileId);
+    });
+
+    const panel = document.getElementById('searchDetailPanel');
+    panel.className = '';
+    panel.innerHTML = '<p class="detail-empty">상세 요약 조회 중...</p>';
+
+    try {
+      const res = await fetch(`/api/v1/documents/${fileId}/result`);
+      const resData = await res.json();
+      if (!res.ok || !resData.success) {
+        panel.innerHTML = '<p class="detail-empty">상세 정보를 불러올 수 없습니다.</p>';
+        return;
+      }
+
+      const data = resData.data;
+      const info = data.document_info || {};
+      const sData = data.summary_data || {};
+      const archInfo = data.archiving_info || {};
+      panel.innerHTML = `
+        <p style="font-size:0.85rem; color:var(--text-sub); margin-bottom:0.6rem;">${info.original_filename || '-'}</p>
+        <label style="font-size:0.85rem; color:var(--text-sub);">저장 경로</label>
+        <input type="text" class="form-input" id="detailFolderPath" value="${displayArchivePath(archInfo.recommended_folder || '')}" style="margin-top:0.35rem;">
+        <label style="font-size:0.85rem; color:var(--text-sub); display:block; margin-top:0.9rem;">개요 요약</label>
+        <textarea class="form-textarea" id="detailOverviewEdit" rows="7" style="margin-top:0.35rem;">${(sData.document_overview || []).join('\n')}</textarea>
+        <div style="margin-top:0.9rem;">
+          <p style="font-size:0.85rem; color:var(--text-sub); margin-bottom:0.25rem;">문서 목적</p>
+          <p style="color:#cbd5e1; font-size:0.9rem;">${sData.document_purpose || '-'}</p>
+        </div>
+        <div style="margin-top:0.9rem;">
+          <p style="font-size:0.85rem; color:var(--text-sub); margin-bottom:0.25rem;">핵심 메시지</p>
+          <p style="color:#a78bfa; font-weight:600; font-size:0.92rem;">${sData.conclusion_or_core_message || '-'}</p>
+        </div>
+        <div class="detail-actions">
+          <button class="btn-action btn-save" onclick="submitDetailUpdate()">요약/경로 저장</button>
+          <button class="btn-action btn-download" onclick="submitModalDownload()">원본 다운로드</button>
+          <button class="btn-action" style="background:linear-gradient(135deg, var(--accent-rose), #dc2626);" onclick="submitDetailDelete()">삭제</button>
+        </div>
+      `;
+    } catch (err) {
+      panel.innerHTML = `<p class="detail-empty">오류: ${err.message}</p>`;
+    }
+  }
+
+  async function submitDetailUpdate() {
+    if (!selectedSearchFileId) return;
+
+    const rawOverview = document.getElementById('detailOverviewEdit').value;
+    const overviewList = rawOverview.split('\n').map(s => s.trim()).filter(s => s.length > 0);
+    const newFolder = normalizeArchivePath(document.getElementById('detailFolderPath').value);
+
+    try {
+      const summaryRes = await fetch(`/api/v1/documents/${selectedSearchFileId}/summary`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ overview_summary: overviewList })
+      });
+      const summaryData = await summaryRes.json();
+      if (!summaryRes.ok || !summaryData.success) {
+        alert(summaryData.detail || '요약 저장에 실패했습니다.');
+        return;
+      }
+
+      const moveRes = await fetch(`/api/v1/documents/${selectedSearchFileId}/folder`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ new_folder_path: newFolder })
+      });
+      const moveData = await moveRes.json();
+      if (!moveRes.ok || !moveData.success) {
+        alert(moveData.detail || '파일 이동에 실패했습니다.');
+        return;
+      }
+
+      selectedFolderPath = newFolder;
+      highlightedFileId = selectedSearchFileId;
+      expandFolderAncestors(selectedFolderPath);
+      showToast('요약과 저장 경로를 반영했습니다.');
+      await refreshFolderTree();
+      await executeSearch();
+    } catch (err) {
+      alert('상세 요약 저장 중 오류: ' + err.message);
+    }
+  }
+
+  async function submitDetailDelete() {
+    if (!selectedSearchFileId) return;
+    if (!confirm('선택한 문서의 파일과 DB 자료를 삭제합니다. 계속하시겠습니까?')) return;
+
+    try {
+      const fileId = selectedSearchFileId;
+      const res = await fetch(`/api/v1/documents/${fileId}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        alert(data.detail || '삭제에 실패했습니다.');
+        return;
+      }
+
+      selectedSearchFileId = null;
+      highlightedFileId = null;
+      showToast('문서가 삭제되었습니다.');
+      await refreshFolderTree();
+      await executeSearch();
+    } catch (err) {
+      alert('삭제 중 서버 오류 발생: ' + err.message);
     }
   }
 

@@ -204,3 +204,65 @@ def test_move_nonexistent_document():
         json={"new_folder_path": "temp/nowhere"}
     )
     assert res.status_code == 404
+
+
+def test_save_folder_is_normalized_under_output_root():
+    res = client.post(
+        "/api/v1/documents/analyze",
+        files={"file": ("output-root.txt", FULL_DOC_CONTENT, "text/plain")}
+    )
+    assert res.status_code == 200
+    file_id = res.json()["data"]["file_id"]
+
+    save_res = client.post(
+        f"/api/v1/documents/{file_id}/save",
+        json={
+            "folder_path": "archive/root_default",
+            "filename": "root_default.txt",
+            "document_overview": ["root normalized"]
+        }
+    )
+    assert save_res.status_code == 200, save_res.text
+    body = save_res.json()
+    assert body["archived_file_path"].replace("\\", "/").startswith("output/archive/root_default/")
+    assert os.path.exists(body["archived_file_path"])
+
+    client.delete(f"/api/v1/documents/{file_id}")
+
+
+def test_search_folder_filter_includes_descendants_and_root_has_no_filter():
+    saved_ids = []
+    for name, folder in [
+        ("parent.txt", "archive/search_parent"),
+        ("child.txt", "archive/search_parent/child"),
+    ]:
+        res = client.post(
+            "/api/v1/documents/analyze",
+            files={"file": (name, FULL_DOC_CONTENT, "text/plain")}
+        )
+        assert res.status_code == 200
+        file_id = res.json()["data"]["file_id"]
+        saved_ids.append(file_id)
+
+        save_res = client.post(
+            f"/api/v1/documents/{file_id}/save",
+            json={
+                "folder_path": folder,
+                "filename": name,
+                "document_overview": [f"saved {name}"]
+            }
+        )
+        assert save_res.status_code == 200, save_res.text
+
+    parent_res = client.get("/api/v1/documents/search?folder=archive/search_parent")
+    assert parent_res.status_code == 200, parent_res.text
+    parent_ids = {item["file_id"] for item in parent_res.json()["data"]}
+    assert set(saved_ids).issubset(parent_ids)
+
+    root_res = client.get("/api/v1/documents/search?folder=output")
+    assert root_res.status_code == 200, root_res.text
+    root_ids = {item["file_id"] for item in root_res.json()["data"]}
+    assert set(saved_ids).issubset(root_ids)
+
+    for file_id in saved_ids:
+        client.delete(f"/api/v1/documents/{file_id}")

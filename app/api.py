@@ -129,15 +129,22 @@ async def search_documents(
 
     # 폴더 필터: 지정한 경우 saved_folder 또는 recommended_folder가 일치하는 문서만 반환
     if folder and folder.strip():
-        normalized = folder.strip().replace("\\", "/").rstrip("/")
-        filtered = []
-        for item in results:
-            doc = db.get_document_by_id(item["file_id"])
-            if doc:
-                doc_folder = (doc.get("saved_folder") or doc.get("recommended_folder", "")).replace("\\", "/").rstrip("/")
-                if doc_folder == normalized:
-                    filtered.append(item)
-        results = filtered
+        try:
+            normalized = db.normalize_archive_folder_path(folder).rstrip("/")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        if not db.is_archive_root(normalized):
+            filtered = []
+            for item in results:
+                doc = db.get_document_by_id(item["file_id"])
+                if doc:
+                    doc_folder = db.normalize_archive_folder_path(
+                        doc.get("saved_folder") or doc.get("recommended_folder", "")
+                    ).rstrip("/")
+                    if doc_folder == normalized or doc_folder.startswith(f"{normalized}/"):
+                        filtered.append(item)
+            results = filtered
 
     items = [SearchItem(**r) for r in results]
     return SearchResponse(success=True, total_count=len(items), data=items)
@@ -279,8 +286,12 @@ async def save_document_alias(file_id: str, req: SaveDocumentRequest):
     return await save_document(file_id, req)
 
 @router.get("/api/documents/search", response_model=SearchResponse, include_in_schema=False)
-async def search_documents_alias(keyword: Optional[str] = Query(None), department: Optional[str] = Query(None)):
-    return await search_documents(keyword, department)
+async def search_documents_alias(
+    keyword: Optional[str] = Query(None),
+    department: Optional[str] = Query(None),
+    folder: Optional[str] = Query(None),
+):
+    return await search_documents(keyword, department, folder)
 
 @router.delete("/api/documents/{file_id}", include_in_schema=False)
 async def delete_document_alias(file_id: str):

@@ -6,6 +6,32 @@ from datetime import datetime
 document_db: Dict[str, Dict[str, Any]] = {}
 document_files: Dict[str, bytes] = {}
 
+ARCHIVE_ROOT = "output"
+
+
+def normalize_archive_folder_path(folder_path: Optional[str]) -> str:
+    """Normalize every archive folder into the fixed output root."""
+    raw_path = (folder_path or "").strip().replace("\\", "/").strip("/")
+    root = ARCHIVE_ROOT.replace("\\", "/").strip("/")
+
+    if not raw_path or raw_path == root:
+        normalized = root
+    elif raw_path.startswith(f"{root}/"):
+        normalized = raw_path
+    else:
+        normalized = f"{root}/{raw_path}"
+
+    root_abs = os.path.abspath(root)
+    normalized_abs = os.path.abspath(normalized)
+    if os.path.commonpath([root_abs, normalized_abs]) != root_abs:
+        raise ValueError(f"Archive folder must be under {ARCHIVE_ROOT}.")
+
+    return normalized
+
+
+def is_archive_root(folder_path: Optional[str]) -> bool:
+    return normalize_archive_folder_path(folder_path).rstrip("/") == ARCHIVE_ROOT
+
 def store_uploaded_document(file_id: str, original_filename: str, format_str: str, file_bytes: bytes, file_path: str):
     """Store raw file bytes and initial metadata."""
     document_files[file_id] = file_bytes
@@ -56,8 +82,9 @@ def archive_and_save_document(file_id: str, folder_path: str, filename: str, doc
         return False, "문서를 찾을 수 없습니다."
 
     try:
-        os.makedirs(folder_path, exist_ok=True)
-        archived_full_path = os.path.join(folder_path, filename)
+        normalized_folder_path = normalize_archive_folder_path(folder_path)
+        os.makedirs(normalized_folder_path, exist_ok=True)
+        archived_full_path = os.path.join(normalized_folder_path, filename)
         
         # Save original file bytes to destination folder
         file_bytes = document_files[file_id]
@@ -68,7 +95,7 @@ def archive_and_save_document(file_id: str, folder_path: str, filename: str, doc
         doc = document_db[file_id]
         doc["status"] = "SAVED"
         doc["archived_path"] = archived_full_path
-        doc["saved_folder"] = folder_path
+        doc["saved_folder"] = normalized_folder_path
         doc["saved_filename"] = filename
         
         if "summary_data" in doc and doc["summary_data"]:
@@ -187,10 +214,13 @@ def move_document_file(
     filename = new_filename or doc.get("saved_filename") or doc.get("original_filename", "unknown")
 
     try:
-        os.makedirs(new_folder_path, exist_ok=True)
-        new_full_path = os.path.join(new_folder_path, filename)
+        normalized_folder_path = normalize_archive_folder_path(new_folder_path)
+        os.makedirs(normalized_folder_path, exist_ok=True)
+        new_full_path = os.path.join(normalized_folder_path, filename)
 
-        if old_path and os.path.exists(old_path):
+        if old_path and os.path.abspath(old_path) == os.path.abspath(new_full_path):
+            pass
+        elif old_path and os.path.exists(old_path):
             import shutil
             shutil.move(old_path, new_full_path)
         else:
@@ -203,16 +233,13 @@ def move_document_file(
 
         # DB 경로 업데이트
         doc["archived_path"] = new_full_path
-        doc["saved_folder"] = new_folder_path
+        doc["saved_folder"] = normalized_folder_path
         doc["saved_filename"] = filename
 
         return True, old_path, new_full_path
 
     except Exception as e:
         return False, "", f"파일 이동 중 오류가 발생했습니다: {str(e)}"
-
-
-ARCHIVE_ROOT = "output/archive"  # 폴더 추천 기준 루트
 
 def get_existing_archive_folders() -> List[str]:
     """
