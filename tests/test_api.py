@@ -419,3 +419,62 @@ def test_update_all_ai_results_persists_schema_and_markdown():
     assert "사용자 수정 분석 주제" in markdown
     assert "사용자 확인" in markdown
     client.delete(f"/api/v1/documents/{file_id}")
+
+
+def test_unconfirmed_work_list_and_batch_operations():
+    # 1. Analyze auto (user_confirmed = False)
+    res = client.post(
+        "/api/v1/documents/analyze-auto",
+        files={"file": ("auto-test1.txt", FULL_DOC_CONTENT, "text/plain")},
+    )
+    assert res.status_code == 200
+    file_id1 = res.json()["data"]["file_id"]
+
+    # 2. Get unconfirmed list
+    unconfirmed_res = client.get("/api/v1/documents/unconfirmed")
+    assert unconfirmed_res.status_code == 200
+    unconfirmed_ids = [item["file_id"] for item in unconfirmed_res.json()["data"]]
+    assert file_id1 in unconfirmed_ids
+
+    # 3. Confirm single document
+    confirm_res = client.put(
+        f"/api/v1/documents/{file_id1}/confirm",
+        json={"folder_path": "archive/confirmed_folder", "document_overview": ["확정 요약"]}
+    )
+    assert confirm_res.status_code == 200
+
+    # Assert removed from unconfirmed list
+    unconfirmed_after = client.get("/api/v1/documents/unconfirmed")
+    assert file_id1 not in [item["file_id"] for item in unconfirmed_after.json()["data"]]
+
+    # 4. Analyze two more documents for batch operations
+    res2 = client.post(
+        "/api/v1/documents/analyze-auto",
+        files={"file": ("auto-test2.txt", FULL_DOC_CONTENT, "text/plain")},
+    )
+    res3 = client.post(
+        "/api/v1/documents/analyze-auto",
+        files={"file": ("auto-test3.txt", FULL_DOC_CONTENT, "text/plain")},
+    )
+    file_id2 = res2.json()["data"]["file_id"]
+    file_id3 = res3.json()["data"]["file_id"]
+
+    # 5. Batch confirm for file_id2
+    batch_confirm_res = client.post(
+        "/api/v1/documents/batch-confirm",
+        json={"items": [{"file_id": file_id2, "folder_path": "archive/batch_folder", "document_overview": ["일괄 확정 요약"]}]}
+    )
+    assert batch_confirm_res.status_code == 200
+    assert batch_confirm_res.json()["success_count"] == 1
+
+    # 6. Batch delete for file_id3
+    batch_delete_res = client.post(
+        "/api/v1/documents/batch-delete",
+        json={"file_ids": [file_id3]}
+    )
+    assert batch_delete_res.status_code == 200
+    assert batch_delete_res.json()["success_count"] == 1
+
+    # Cleanup file_id1 & file_id2
+    client.delete(f"/api/v1/documents/{file_id1}")
+    client.delete(f"/api/v1/documents/{file_id2}")

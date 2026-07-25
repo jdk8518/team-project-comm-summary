@@ -14,6 +14,8 @@ from app.schemas import (
     SearchResponse, SearchItem, SummaryUpdateRequest,
     MoveFileRequest, MoveFileResponse,
     FolderRecommendItem, FolderRecommendResponse,
+    UnconfirmedDocumentItem, UnconfirmedListResponse,
+    ConfirmDocumentRequest, BatchConfirmItem, BatchConfirmRequest, BatchDeleteRequest,
 )
 from app.parsers import validate_file_metadata, extract_text_from_file, structure_text, DocumentParsingError
 from app.services import run_document_analysis, run_document_summarization, run_document_validation, recommend_folder
@@ -125,6 +127,66 @@ async def analyze_document(file: UploadFile = File(...)):
     )
 
     return IntegratedResultResponse(success=True, data=integrated_data)
+
+@router.post("/analyze-auto", response_model=IntegratedResultResponse, summary="다중 파일 자동 분석 및 보관 API (user_confirmed = False)")
+async def analyze_document_auto(file: UploadFile = File(...)):
+    """
+    다중 파일 업로드 시 개별 문서를 수신하여
+    분석/요약/검증을 완료한 후 사용자 개입 없이 바로 DB와 원본/Markdown 파일로 보관(user_confirmed=False)합니다.
+    """
+    res = await analyze_document(file)
+    file_id = res.data.file_id
+    doc_record = db.get_document_by_id(file_id)
+
+    rec_folder = doc_record.get("recommended_folder", "output/archive/디지털혁신팀/")
+    rec_filename = doc_record.get("recommended_filename", doc_record.get("original_filename", "doc.pdf"))
+    overview = getattr(res.data.summary_data, "document_overview", ["자동 분석 요약"])
+
+    db.archive_and_save_document(
+        file_id=file_id,
+        folder_path=rec_folder,
+        filename=rec_filename,
+        document_overview=overview,
+    )
+    doc_record["user_confirmed"] = False
+    db.save_doc_to_sqlite(doc_record)
+
+    res.data.status = "SAVED"
+    return res
+
+@router.get("/unconfirmed", response_model=UnconfirmedListResponse, summary="미확인 다중파일 작업 리스트 조회 API")
+async def get_unconfirmed_documents():
+    results = db.get_unconfirmed_documents()
+    items = [UnconfirmedDocumentItem(**r) for r in results]
+    return UnconfirmedListResponse(success=True, total_count=len(items), data=items)
+
+@router.put("/{file_id}/confirm", summary="단일 문서 확정 저장 API")
+async def confirm_single_document(file_id: str, req: ConfirmDocumentRequest):
+    success, msg = db.confirm_document(file_id, req.folder_path, req.document_overview)
+    if not success:
+        raise HTTPException(status_code=400, detail=msg)
+    return {"success": True, "message": msg, "file_id": file_id}
+
+@router.post("/batch-confirm", summary="다중 파일 일괄 확정 저장 API")
+async def batch_confirm_documents(req: BatchConfirmRequest):
+    items_list = [item.model_dump() for item in req.items]
+    success_count, failed_ids = db.batch_confirm_documents(items_list)
+    return {
+        "success": True,
+        "message": f"{success_count}개 문서가 성공적으로 확정 저장되었습니다.",
+        "success_count": success_count,
+        "failed_ids": failed_ids
+    }
+
+@router.post("/batch-delete", summary="다중 파일 일괄 삭제 API")
+async def batch_delete_documents(req: BatchDeleteRequest):
+    success_count, failed_ids = db.batch_delete_documents(req.file_ids)
+    return {
+        "success": True,
+        "message": f"{success_count}개 문서가 성공적으로 삭제되었습니다.",
+        "success_count": success_count,
+        "failed_ids": failed_ids
+    }
 
 @router.post("/{file_id}/save", response_model=SaveDocumentResponse, summary="지정한 폴더/파일명 원본 저장 및 DB 요약 저장 API")
 async def save_document(file_id: str, req: SaveDocumentRequest):

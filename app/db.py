@@ -52,10 +52,15 @@ def init_sqlite_db() -> None:
                 analysis_data TEXT,
                 summary_data TEXT,
                 validation_data TEXT,
+                user_confirmed INTEGER DEFAULT 0,
                 created_at TEXT,
                 updated_at TEXT
             )
         """)
+        try:
+            cursor.execute("ALTER TABLE documents ADD COLUMN user_confirmed INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
         conn.commit()
 
         # Load existing database records into memory cache on startup
@@ -107,6 +112,7 @@ def init_sqlite_db() -> None:
                 except Exception:
                     pass
 
+            record["user_confirmed"] = bool(record.get("user_confirmed", 0))
             document_db[doc_id] = record
 
 
@@ -138,8 +144,8 @@ def save_doc_to_sqlite(doc: Dict[str, Any]) -> None:
                 saved_folder, saved_filename, archived_path, summary_path,
                 format, size_bytes, uploaded_at, department, status, file_path,
                 raw_text, structured_content, analysis_data, summary_data, validation_data,
-                created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                user_confirmed, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             doc.get("file_id"),
             doc.get("original_filename"),
@@ -160,6 +166,7 @@ def save_doc_to_sqlite(doc: Dict[str, Any]) -> None:
             _serialize_pydantic(doc.get("analysis_data")),
             _serialize_pydantic(doc.get("summary_data")),
             _serialize_pydantic(doc.get("validation_data")),
+            1 if doc.get("user_confirmed") else 0,
             doc.get("created_at") or now_str,
             now_str
         ))
@@ -351,11 +358,91 @@ def store_uploaded_document(file_id: str, original_filename: str, format_str: st
         "analysis_data": None,
         "summary_data": None,
         "validation_data": None,
+        "user_confirmed": False,
         "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
 
     document_db[file_id] = doc
+
+
+def get_unconfirmed_documents() -> List[Dict[str, Any]]:
+    """Return list of documents with user_confirmed == False for multi-file work list."""
+    results = []
+    for doc_id, doc in document_db.items():
+        if not doc.get("user_confirmed", False):
+            summary_obj = doc.get("summary_data")
+            overview_text = ""
+            if summary_obj and hasattr(summary_obj, "summary_result"):
+                ov = summary_obj.summary_result.document_overview
+                overview_text = " ".join(ov) if isinstance(ov, list) else str(ov)
+
+            results.append({
+                "file_id": doc_id,
+                "original_filename": doc.get("original_filename", "file.pdf"),
+                "renamed_filename": doc.get("saved_filename") or doc.get("recommended_filename") or doc.get("original_filename") or "document",
+                "saved_folder": doc.get("saved_folder") or doc.get("recommended_folder", "output/archive/디지털혁신팀/"),
+                "one_line_summary": overview_text or "요약문이 생성되어 있습니다.",
+                "user_confirmed": False,
+                "uploaded_at": doc.get("uploaded_at", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+            })
+    return results
+
+
+def confirm_document(file_id: str, folder_path: str, document_overview: List[str]) -> Tuple[bool, str]:
+    """Update document folder path & overview, set user_confirmed = True."""
+    if file_id not in document_db:
+        return False, "문서를 찾을 수 없습니다."
+
+    doc = document_db[file_id]
+
+    # Update summary overview
+    if "summary_data" in doc and doc["summary_data"]:
+        summary_obj = doc["summary_data"]
+        if hasattr(summary_obj, "summary_result"):
+            summary_obj.summary_result.document_overview = document_overview
+
+    # Move file if folder_path changed
+    current_folder = doc.get("saved_folder") or doc.get("recommended_folder")
+    if folder_path and folder_path != current_folder:
+        move_document_file(file_id, folder_path)
+
+    doc["user_confirmed"] = True
+    save_doc_to_sqlite(doc)
+
+    if doc.get("archived_path"):
+        write_summary_markdown(file_id, doc["archived_path"])
+
+    return True, "문서가 성공적으로 확정(저장)되었습니다."
+
+
+def batch_confirm_documents(items: List[Dict[str, Any]]) -> Tuple[int, List[str]]:
+    """Confirm multiple documents in a single batch operation."""
+    success_count = 0
+    failed_ids = []
+    for item in items:
+        f_id = item.get("file_id")
+        folder = item.get("folder_path", "")
+        overview = item.get("document_overview", [])
+        ok, _ = confirm_document(f_id, folder, overview)
+        if ok:
+            success_count += 1
+        else:
+            failed_ids.append(f_id)
+    return success_count, failed_ids
+
+
+def batch_delete_documents(file_ids: List[str]) -> Tuple[int, List[str]]:
+    """Delete multiple documents in a single batch operation."""
+    success_count = 0
+    failed_ids = []
+    for f_id in file_ids:
+        ok, _ = delete_document_from_db(f_id)
+        if ok:
+            success_count += 1
+        else:
+            failed_ids.append(f_id)
+    return success_count, failed_ids
     save_doc_to_sqlite(doc)
 
 

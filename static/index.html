@@ -417,14 +417,25 @@
   <div class="tab-content active" id="tabUpload">
     <!-- Upload Card -->
     <div class="card">
-      <div class="dropzone" id="dropzone" onclick="document.getElementById('fileInput').click()">
-        <div class="dropzone-icon" style="font-size: 2.5rem;">📄</div>
-        <p style="font-weight: 600; font-size: 1.05rem; margin-bottom: 0.4rem;">분석할 문서 파일을 드래그하거나 클릭하여 선택하세요</p>
-        <p style="font-size: 0.85rem; color: var(--text-sub);">지원 포맷: PDF, DOCX, TXT, HWP, HWPX, PPTX (최대 50MB)</p>
-        <input type="file" id="fileInput" style="display: none" accept=".pdf,.docx,.txt,.hwp,.hwpx,.pptx" onchange="handleFileSelect(this.files[0])">
+      <div class="dropzone" id="dropzone">
+        <div class="dropzone-icon" style="font-size: 2.5rem;">📁</div>
+        <p style="font-weight: 600; font-size: 1.05rem; margin-bottom: 0.4rem;">분석할 문서 파일(들) 또는 폴더를 드래그하거나 선택하세요</p>
+        <p style="font-size: 0.85rem; color: var(--text-sub); margin-bottom: 1.2rem;">지원 포맷: PDF, DOCX, TXT, HWP, HWPX, PPTX (최대 50MB)</p>
+        
+        <div style="display: flex; gap: 0.8rem; justify-content: center; flex-wrap: wrap;">
+          <button class="btn-action" type="button" style="width: auto; padding: 0.65rem 1.4rem; margin: 0; font-size: 0.9rem;" onclick="document.getElementById('fileInput').click(); event.stopPropagation();">
+            📄 파일(들) 선택
+          </button>
+          <button class="btn-action" type="button" style="width: auto; padding: 0.65rem 1.4rem; margin: 0; font-size: 0.9rem; background: linear-gradient(135deg, var(--accent-purple), #7c3aed);" onclick="document.getElementById('folderInput').click(); event.stopPropagation();">
+            📁 폴더 전체 선택 업로드
+          </button>
+        </div>
+
+        <input type="file" id="fileInput" style="display: none" accept=".pdf,.docx,.txt,.hwp,.hwpx,.pptx" multiple onchange="handleBatchFileSelect(this.files)">
+        <input type="file" id="folderInput" style="display: none" webkitdirectory directory multiple onchange="handleBatchFileSelect(this.files)">
       </div>
       <div id="fileSelectedInfo" style="display: none; margin-top: 1rem; color: var(--accent-blue); font-weight: 500;"></div>
-      <button class="btn-action" id="btnAnalyze" disabled onclick="submitAnalysis()">AI 문서 분석 요청</button>
+      <button class="btn-action" id="btnAnalyze" style="display:none;" disabled onclick="submitAnalysis()">AI 문서 분석 요청</button>
     </div>
 
     <!-- Loading Indicator -->
@@ -526,6 +537,44 @@
         <div id="resHumanChecklist"></div>
       </div>
 
+    </div>
+
+    <!-- Multi-file Unconfirmed Work List Card -->
+    <div class="card" style="margin-top: 2rem;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.8rem;">
+        <div class="section-title" style="margin-bottom: 0;"><span>📋</span> 다중파일 작업리스트 (미확인 작업 목록)</div>
+        <div style="display: flex; gap: 0.6rem;">
+          <button class="btn-action btn-save" type="button" style="width: auto; margin-top: 0; padding: 0.55rem 1.1rem; font-size: 0.85rem;" onclick="batchConfirmWorkList()">
+            💾 선택 항목 일괄 저장
+          </button>
+          <button class="btn-action" type="button" style="width: auto; margin-top: 0; padding: 0.55rem 1.1rem; font-size: 0.85rem; background: linear-gradient(135deg, var(--accent-rose), #dc2626);" onclick="batchDeleteWorkList()">
+            🗑️ 선택 항목 일괄 삭제
+          </button>
+        </div>
+      </div>
+
+      <div style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 0.88rem;">
+          <thead>
+            <tr style="border-bottom: 1px solid var(--card-border); color: var(--text-sub); text-align: left;">
+              <th style="padding: 0.6rem 0.5rem; width: 40px; text-align: center;">
+                <input type="checkbox" id="selectAllWorkList" onclick="toggleSelectAllWorkList(this.checked)">
+              </th>
+              <th style="padding: 0.6rem 0.5rem; width: 200px;">저장경로</th>
+              <th style="padding: 0.6rem 0.5rem; width: 180px;">파일명</th>
+              <th style="padding: 0.6rem 0.5rem;">요약내용</th>
+              <th style="padding: 0.6rem 0.5rem; width: 130px; text-align: center;">작업</th>
+            </tr>
+          </thead>
+          <tbody id="workListTableBody">
+            <tr>
+              <td colspan="5" style="text-align: center; color: var(--text-sub); padding: 1.8rem;">
+                등록된 미확인 다중파일 작업 문서가 없습니다.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 
@@ -705,6 +754,7 @@
     if (tabName === 'upload') {
       document.getElementById('tabUploadBtn').classList.add('active');
       document.getElementById('tabUpload').classList.add('active');
+      loadUnconfirmedWorkList();
     } else {
       document.getElementById('tabSearchBtn').classList.add('active');
       document.getElementById('tabSearch').classList.add('active');
@@ -722,8 +772,11 @@
   ['dragenter', 'dragover'].forEach(name => dropzone.addEventListener(name, (e) => { e.preventDefault(); dropzone.classList.add('dragover'); }));
   ['dragleave', 'drop'].forEach(name => dropzone.addEventListener(name, (e) => { e.preventDefault(); dropzone.classList.remove('dragover'); }));
   dropzone.addEventListener('drop', (e) => {
-    const files = e.dataTransfer.files;
-    if (files.length > 0) handleFileSelect(files[0]);
+    e.preventDefault();
+    dropzone.classList.remove('dragover');
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleBatchFileSelect(e.dataTransfer.files);
+    }
   });
 
   function handleFileSelect(file) {
@@ -1625,6 +1678,239 @@
       alert('삭제 중 서버 오류 발생: ' + err.message);
     }
   }
+
+  // =================================================================
+  // Multi-file & Folder Upload Pipeline + Work List Logic
+  // =================================================================
+  const BATCH_ALLOWED_EXTENSIONS = ['.pdf', '.docx', '.txt', '.hwp', '.hwpx', '.pptx'];
+
+  function filterSupportedBatchFiles(fileList) {
+    return Array.from(fileList).filter(file => {
+      const name = file.name.toLowerCase();
+      return BATCH_ALLOWED_EXTENSIONS.some(ext => name.endsWith(ext));
+    });
+  }
+
+  async function handleBatchFileSelect(fileList) {
+    if (!fileList || fileList.length === 0) return;
+
+    const validFiles = filterSupportedBatchFiles(fileList);
+    if (validFiles.length === 0) {
+      alert('지원하지 않는 파일 형식입니다. (PDF, DOCX, TXT, HWP, HWPX, PPTX 포맷만 선택 가능)');
+      return;
+    }
+
+    document.getElementById('errorState').style.display = 'none';
+    document.getElementById('resultSection').style.display = 'none';
+    document.getElementById('toastSuccess').style.display = 'none';
+    document.getElementById('loadingState').style.display = 'block';
+
+    const loadingH3 = document.querySelector('#loadingState h3');
+    const loadingP = document.querySelector('#loadingState p');
+
+    let successCount = 0;
+    let failCount = 0;
+
+    for (let i = 0; i < validFiles.length; i++) {
+      const file = validFiles[i];
+      if (loadingH3) loadingH3.textContent = `다중 파일 파이프라인 분석 및 보관 진행 중... (${i + 1} / ${validFiles.length})`;
+      if (loadingP) loadingP.textContent = `현재 처리 중인 문서: ${file.name}`;
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        const response = await fetch('/api/v1/documents/analyze-auto', {
+          method: 'POST',
+          body: formData
+        });
+        const resData = await response.json();
+        if (response.ok && resData.success) {
+          successCount++;
+          await loadUnconfirmedWorkList();
+        } else {
+          failCount++;
+        }
+      } catch (err) {
+        failCount++;
+      }
+    }
+
+    document.getElementById('loadingState').style.display = 'none';
+    showToast(`총 ${successCount}개 문서가 분석되어 다중파일 작업리스트에 추가되었습니다.${failCount > 0 ? ` (${failCount}개 실패)` : ''}`);
+    await loadUnconfirmedWorkList();
+  }
+
+  async function loadUnconfirmedWorkList() {
+    try {
+      const res = await fetch('/api/v1/documents/unconfirmed');
+      const data = await res.json();
+      const tbody = document.getElementById('workListTableBody');
+      if (!tbody) return;
+      tbody.innerHTML = '';
+
+      if (!data.data || data.data.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="5" style="text-align: center; color: var(--text-sub); padding: 1.8rem;">
+              등록된 미확인 다중파일 작업 문서가 없습니다.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      data.data.forEach(item => {
+        const tr = document.createElement('tr');
+        tr.style.borderBottom = '1px solid var(--card-border)';
+        tr.id = `workRow_${item.file_id}`;
+        tr.innerHTML = `
+          <td style="padding: 0.6rem 0.5rem; text-align: center;">
+            <input type="checkbox" class="worklist-checkbox" value="${item.file_id}">
+          </td>
+          <td style="padding: 0.6rem 0.5rem;">
+            <input type="text" class="form-input" id="workFolder_${item.file_id}" value="${item.saved_folder}" style="margin:0; font-size:0.83rem; padding:0.4rem 0.6rem;">
+          </td>
+          <td style="padding: 0.6rem 0.5rem;">
+            <span style="font-weight:500; color:#60a5fa; word-break:break-all;">📄 ${item.renamed_filename || item.original_filename}</span>
+          </td>
+          <td style="padding: 0.6rem 0.5rem;">
+            <input type="text" class="form-input" id="workSummary_${item.file_id}" value="${item.one_line_summary}" style="margin:0; font-size:0.83rem; padding:0.4rem 0.6rem;">
+          </td>
+          <td style="padding: 0.6rem 0.5rem; text-align: center;">
+            <div style="display:flex; gap:0.4rem; justify-content:center;">
+              <button class="btn-action btn-save" type="button" style="width:auto; margin:0; padding:0.35rem 0.65rem; font-size:0.78rem;" onclick="confirmSingleWorkItem('${item.file_id}')">저장</button>
+              <button class="btn-action" type="button" style="width:auto; margin:0; padding:0.35rem 0.65rem; font-size:0.78rem; background:linear-gradient(135deg, var(--accent-rose), #dc2626);" onclick="deleteSingleWorkItem('${item.file_id}')">삭제</button>
+            </div>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    } catch (err) {
+      console.error('Failed to load unconfirmed work list:', err);
+    }
+  }
+
+  function toggleSelectAllWorkList(checked) {
+    document.querySelectorAll('.worklist-checkbox').forEach(cb => cb.checked = checked);
+  }
+
+  async function confirmSingleWorkItem(fileId) {
+    const folderInput = document.getElementById(`workFolder_${fileId}`);
+    const summaryInput = document.getElementById(`workSummary_${fileId}`);
+    const folder = folderInput ? folderInput.value.trim() : '';
+    const summary = summaryInput ? summaryInput.value.trim() : '';
+
+    try {
+      const res = await fetch(`/api/v1/documents/${fileId}/confirm`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          folder_path: folder,
+          document_overview: [summary]
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showToast('문서가 성공적으로 저장(확정)되었습니다.');
+        const row = document.getElementById(`workRow_${fileId}`);
+        if (row) row.remove();
+        await loadUnconfirmedWorkList();
+      } else {
+        alert('저장 실패: ' + (data.detail || data.message || '오류 발생'));
+      }
+    } catch (err) {
+      alert('저장 처리 중 오류: ' + err.message);
+    }
+  }
+
+  async function deleteSingleWorkItem(fileId) {
+    if (!confirm('정말로 이 문서를 삭제하시겠습니까? (삭제 후 복구 불가)')) return;
+    try {
+      const res = await fetch(`/api/v1/documents/${fileId}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showToast('문서가 성공적으로 삭제되었습니다.');
+        const row = document.getElementById(`workRow_${fileId}`);
+        if (row) row.remove();
+        await loadUnconfirmedWorkList();
+      } else {
+        alert('삭제 실패: ' + (data.detail || data.message || '오류 발생'));
+      }
+    } catch (err) {
+      alert('삭제 처리 중 오류: ' + err.message);
+    }
+  }
+
+  async function batchConfirmWorkList() {
+    const checkedBoxes = Array.from(document.querySelectorAll('.worklist-checkbox:checked'));
+    if (checkedBoxes.length === 0) {
+      alert('저장할 문서를 목록에서 선택하세요.');
+      return;
+    }
+
+    const items = checkedBoxes.map(cb => {
+      const fileId = cb.value;
+      const folderInput = document.getElementById(`workFolder_${fileId}`);
+      const summaryInput = document.getElementById(`workSummary_${fileId}`);
+      return {
+        file_id: fileId,
+        folder_path: folderInput ? folderInput.value.trim() : '',
+        document_overview: summaryInput ? [summaryInput.value.trim()] : []
+      };
+    });
+
+    try {
+      const res = await fetch('/api/v1/documents/batch-confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showToast(`${data.success_count}개 문서가 성공적으로 일괄 저장되었습니다.`);
+        await loadUnconfirmedWorkList();
+      } else {
+        alert('일괄 저장 실패: ' + (data.detail || data.message));
+      }
+    } catch (err) {
+      alert('일괄 저장 처리 중 오류: ' + err.message);
+    }
+  }
+
+  async function batchDeleteWorkList() {
+    const checkedBoxes = Array.from(document.querySelectorAll('.worklist-checkbox:checked'));
+    if (checkedBoxes.length === 0) {
+      alert('삭제할 문서를 목록에서 선택하세요.');
+      return;
+    }
+
+    if (!confirm(`선택한 ${checkedBoxes.length}개 문서를 삭제하시겠습니까? (삭제 후 복구 불가)`)) return;
+
+    const fileIds = checkedBoxes.map(cb => cb.value);
+
+    try {
+      const res = await fetch('/api/v1/documents/batch-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ file_ids: fileIds })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showToast(`${data.success_count}개 문서가 성공적으로 일괄 삭제되었습니다.`);
+        await loadUnconfirmedWorkList();
+      } else {
+        alert('일괄 삭제 실패: ' + (data.detail || data.message));
+      }
+    } catch (err) {
+      alert('일괄 삭제 처리 중 오류: ' + err.message);
+    }
+  }
+
+  // Load unconfirmed work list on startup
+  document.addEventListener('DOMContentLoaded', () => {
+    loadUnconfirmedWorkList();
+  });
 </script>
 
 </body>

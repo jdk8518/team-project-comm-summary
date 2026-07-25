@@ -233,3 +233,33 @@ class FolderRecommendRequest(BaseModel):
     message: str = ""
     keywords: Dict[str, List[str]] = {}
     folders: List[str] = []
+
+# 9. Multi-file Work List & Batch Operations Schemas
+class UnconfirmedDocumentItem(BaseModel):
+    file_id: str
+    original_filename: str
+    renamed_filename: str
+    saved_folder: str
+    one_line_summary: str
+    user_confirmed: bool = False
+    uploaded_at: str
+
+class UnconfirmedListResponse(BaseModel):
+    success: bool = True
+    total_count: int
+    data: List[UnconfirmedDocumentItem]
+
+class ConfirmDocumentRequest(BaseModel):
+    folder_path: str = Field(..., description="저장 대상 폴더 경로")
+    document_overview: List[str] = Field(..., description="요약 개요 목록")
+
+class BatchConfirmItem(BaseModel):
+    file_id: str
+    folder_path: str
+    document_overview: List[str]
+
+class BatchConfirmRequest(BaseModel):
+    items: List[BatchConfirmItem]
+
+class BatchDeleteRequest(BaseModel):
+    file_ids: List[str]
