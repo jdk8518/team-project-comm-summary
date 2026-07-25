@@ -567,7 +567,7 @@ CF-05. 분석 결과 화면 출력 기능
 - PDF 문서
 - Word 문서
 - 텍스트 파일
-- HWPX 문서
+- HWP, HWPX 문서
 - PowerPoint 문서
 
 최대한 vibe-frame-kit의 스킬을 따라서 작성해줘.
