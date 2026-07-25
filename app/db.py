@@ -396,24 +396,45 @@ def get_all_departments() -> List[str]:
 def get_unconfirmed_documents() -> List[Dict[str, Any]]:
     """Return list of documents with user_confirmed == False for multi-file work list."""
     results = []
-    for doc_id, doc in document_db.items():
-        if not doc.get("user_confirmed", False):
-            summary_obj = doc.get("summary_data")
-            overview_text = ""
-            if summary_obj and hasattr(summary_obj, "summary_result"):
-                ov = summary_obj.summary_result.document_overview
-                overview_text = " ".join(ov) if isinstance(ov, list) else str(ov)
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM documents WHERE user_confirmed = 0 OR user_confirmed IS NULL ORDER BY created_at DESC")
+            rows = cursor.fetchall()
+            for r in rows:
+                doc_id = r["file_id"]
+                doc = document_db.get(doc_id, dict(r))
+                if doc.get("user_confirmed"):
+                    continue
+                summary_obj = doc.get("summary_data")
+                overview_text = ""
+                if summary_obj:
+                    if hasattr(summary_obj, "summary_result"):
+                        ov = summary_obj.summary_result.document_overview
+                        overview_text = " ".join(ov) if isinstance(ov, list) else str(ov)
+                    elif isinstance(summary_obj, dict):
+                        ov = summary_obj.get("summary_result", {}).get("document_overview", "")
+                        overview_text = " ".join(ov) if isinstance(ov, list) else str(ov)
+                elif r["summary_data"]:
+                    try:
+                        s_json = json.loads(r["summary_data"])
+                        ov = s_json.get("summary_result", {}).get("document_overview", "")
+                        overview_text = " ".join(ov) if isinstance(ov, list) else str(ov)
+                    except Exception:
+                        pass
 
-            results.append({
-                "file_id": doc_id,
-                "original_filename": doc.get("original_filename", "file.pdf"),
-                "renamed_filename": doc.get("saved_filename") or doc.get("recommended_filename") or doc.get("original_filename") or "document",
-                "saved_folder": doc.get("saved_folder") or doc.get("recommended_folder", f"output/archive/{doc.get('department', '디지털혁신팀')}/"),
-                "department": doc.get("department", "디지털혁신팀"),
-                "one_line_summary": overview_text or "요약문이 생성되어 있습니다.",
-                "user_confirmed": False,
-                "uploaded_at": doc.get("uploaded_at", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
-            })
+                results.append({
+                    "file_id": doc_id,
+                    "original_filename": doc.get("original_filename") or r["original_filename"] or "file.pdf",
+                    "renamed_filename": doc.get("saved_filename") or doc.get("recommended_filename") or doc.get("original_filename") or "document",
+                    "saved_folder": doc.get("saved_folder") or doc.get("recommended_folder", f"output/archive/{doc.get('department', '디지털혁신팀')}/"),
+                    "department": doc.get("department") or r["department"] or "디지털혁신팀",
+                    "one_line_summary": overview_text or "요약문이 생성되어 있습니다.",
+                    "user_confirmed": False,
+                    "uploaded_at": doc.get("uploaded_at") or r["uploaded_at"] or datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                })
+    except Exception as e:
+        print(f"Error getting unconfirmed documents: {e}")
     return results
 
 
@@ -539,7 +560,7 @@ def update_document_results(file_id: str, analysis_data: Any, summary_data: Any,
     return True
 
 
-def archive_and_save_document(file_id: str, folder_path: str, filename: str, document_overview: List[str], analysis_data: Any = None, summary_data: Any = None, verification_data: Any = None, department: Optional[str] = None) -> Tuple[bool, str]:
+def archive_and_save_document(file_id: str, folder_path: str, filename: str, document_overview: List[str], analysis_data: Any = None, summary_data: Any = None, verification_data: Any = None, department: Optional[str] = None, user_confirmed: Optional[bool] = None) -> Tuple[bool, str]:
     """Save original file to specified folder_path/filename and insert/update DB record in SQLite."""
     if file_id not in document_db:
         return False, "문서를 찾을 수 없습니다."
@@ -558,6 +579,8 @@ def archive_and_save_document(file_id: str, folder_path: str, filename: str, doc
         doc = document_db[file_id]
         if department and department.strip():
             doc["department"] = department.strip()
+        if user_confirmed is not None:
+            doc["user_confirmed"] = user_confirmed
         doc["status"] = "SAVED"
         doc["archived_path"] = archived_full_path
         doc["saved_folder"] = normalized_folder_path

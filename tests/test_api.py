@@ -521,3 +521,19 @@ def test_departments_endpoint_and_custom_department_saving():
 
     client.delete(f"/api/v1/documents/{file_id1}")
     client.delete(f"/api/v1/documents/{file_id2}")
+
+
+def test_folder_relative_path_filename_upload():
+    res = client.post(
+        "/api/v1/documents/analyze-auto",
+        files={"file": ("my_folder/sub/nested_doc.txt", FULL_DOC_CONTENT, "text/plain")},
+    )
+    assert res.status_code == 200
+    assert res.json()["success"] is True
+    file_id = res.json()["data"]["file_id"]
+
+    doc = client.get(f"/api/v1/documents/{file_id}/result")
+    assert doc.status_code == 200
+    assert doc.json()["data"]["document_info"]["original_filename"] == "nested_doc.txt"
+
+    client.delete(f"/api/v1/documents/{file_id}")

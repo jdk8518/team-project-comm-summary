@@ -43,7 +43,8 @@ async def analyze_document(
     """
     file_bytes = await file.read()
     file_size = len(file_bytes)
-    filename = file.filename or "unknown.pdf"
+    raw_filename = file.filename or "unknown.pdf"
+    filename = os.path.basename(raw_filename.replace("\\", "/")) or "unknown.pdf"
 
     # 1. 3단계 유효성 검증
     format_str = validate_file_metadata(filename, file_size)
@@ -219,6 +220,7 @@ async def save_document(file_id: str, req: SaveDocumentRequest):
         summary_data=req.summary_data,
         verification_data=req.verification_data,
         department=req.department,
+        user_confirmed=True,
     )
 
     if not success:
