@@ -23,6 +23,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.middleware("http")
+async def disable_dashboard_html_cache(request: Request, call_next):
+    """개발 중 대시보드 HTML이 이전 JS를 재사용하지 않도록 항상 재검증한다."""
+    response = await call_next(request)
+    if request.url.path in {"", "/"} or request.url.path.endswith(".html"):
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    return response
+
 # Include API Router
 app.include_router(document_router)
 

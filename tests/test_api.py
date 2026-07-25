@@ -1,4 +1,5 @@
 import os
+import re
 import pytest
 from fastapi.testclient import TestClient
 from app.main import app
@@ -14,6 +15,11 @@ FULL_DOC_CONTENT = (
     "- 오는 2026년 8월 31일까지 MVP 구축을 완료할 예정입니다.\n"
     "- 홍길동 팀장 및 김철수 수석 참여 예정."
 ).encode("utf-8")
+
+def test_dashboard_html_disables_stale_javascript_cache():
+    res = client.get("/")
+    assert res.status_code == 200
+    assert "no-store" in res.headers.get("cache-control", "")
 
 # ============================================================
 # 전체 12단계 MVP 파이프라인 통합 테스트
@@ -54,7 +60,7 @@ def test_full_12step_mvp_pipeline():
 
     # ─── 9: DB & 파일시스템 저장 ─────────────────────────────
     target_folder = "temp/test_12step_output"
-    target_filename = "2026_업무보고_아카이빙.txt"
+    target_filename = "사용자 입력 이름.txt"
 
     save_res = client.post(
         f"/api/v1/documents/{file_id}/save",
@@ -69,7 +75,18 @@ def test_full_12step_mvp_pipeline():
     assert save_body["success"] is True
     assert save_body["file_id"] == file_id
     # 파일시스템에 실제 보관 확인
-    assert os.path.exists(os.path.join(target_folder, target_filename))
+    archived_path = save_body["archived_file_path"].replace("\\", "/")
+    assert archived_path.startswith("output/temp/test_12step_output/")
+    assert os.path.exists(save_body["archived_file_path"])
+    assert re.search(r"/\d{4}-\d{2}-\d{2}_2026_업무보고(?:\(\d+\))?\.txt$", archived_path)
+    summary_path = os.path.splitext(save_body["archived_file_path"])[0] + ".md"
+    assert os.path.exists(summary_path)
+    with open(summary_path, encoding="utf-8") as summary_file:
+        assert "저장 요약 1" in summary_file.read()
+    md_res = client.get(f"/api/v1/documents/{file_id}/markdown")
+    assert md_res.status_code == 200
+    assert md_res.headers["content-type"].startswith("text/markdown")
+    assert "저장 요약 1" in md_res.text
 
     # ─── 10: DB 리스트 검색 ──────────────────────────────────
     search_res = client.get("/api/v1/documents/search?keyword=업무보고")
@@ -98,6 +115,7 @@ def test_full_12step_mvp_pipeline():
     del_body = del_res.json()
     assert del_body["success"] is True
     assert del_body["file_id"] == file_id
+    assert not os.path.exists(summary_path)
 
     # 삭제 후 검색에서 사라졌는지 확인
     search_after = client.get("/api/v1/documents/search")
@@ -154,10 +172,13 @@ def test_move_document_folder():
 
     # 2. 저장
     old_folder = "temp/test_move_src"
-    client.post(
+    save_res = client.post(
         f"/api/v1/documents/{file_id}/save",
         json={"folder_path": old_folder, "filename": "before_move.txt", "document_overview": ["테스트"]}
     )
+    assert save_res.status_code == 200, save_res.text
+    old_summary = os.path.splitext(save_res.json()["archived_file_path"])[0] + ".md"
+    assert os.path.exists(old_summary)
 
     # 3. 경로 이동
     new_folder = "temp/test_move_dst"
@@ -171,8 +192,10 @@ def test_move_document_folder():
     assert new_folder in body["new_path"]
 
     # 4. 새 경로에 파일 실존 확인
-    import os
     assert os.path.exists(body["new_path"])
+    new_summary = os.path.splitext(body["new_path"])[0] + ".md"
+    assert os.path.exists(new_summary)
+    assert not os.path.exists(old_summary)
 
     # 정리
     client.delete(f"/api/v1/documents/{file_id}")
@@ -193,6 +216,19 @@ def test_recommend_folder_returns_list():
     assert body["success"] is True
     assert "recommendations" in body
     assert isinstance(body["recommendations"], list)
+
+    edited_res = client.post(
+        f"/api/v1/documents/{file_id}/recommend-folder",
+        json={
+            "summary": ["사용자 수정 요약"],
+            "purpose": "업무 보고",
+            "message": "핵심 추진 일정",
+            "keywords": {"concepts": ["AI", "업무"], "organizations": ["디지털혁신팀"]},
+            "folders": ["output", "output/archive/디지털혁신팀"],
+        },
+    )
+    assert edited_res.status_code == 200, edited_res.text
+    assert edited_res.json()["recommendations"]
 
     client.delete(f"/api/v1/documents/{file_id}")
 
@@ -266,3 +302,75 @@ def test_search_folder_filter_includes_descendants_and_root_has_no_filter():
 
     for file_id in saved_ids:
         client.delete(f"/api/v1/documents/{file_id}")
+
+
+def test_db_health_reports_mvp_backend_and_limitation():
+    res = client.get("/api/v1/documents/health/db")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["success"] is True
+    assert body["data"]["connected"] is True
+    assert body["data"]["backend"] == "in_memory"
+    assert body["data"]["persistent"] is False
+    assert body["data"]["migration_recommendation"]
+
+
+def test_save_duplicate_original_uses_incrementing_sequence():
+    file_ids = []
+    paths = []
+    for _ in range(2):
+        res = client.post(
+            "/api/v1/documents/analyze",
+            files={"file": ("duplicate.txt", FULL_DOC_CONTENT, "text/plain")},
+        )
+        assert res.status_code == 200, res.text
+        file_id = res.json()["data"]["file_id"]
+        file_ids.append(file_id)
+        save_res = client.post(
+            f"/api/v1/documents/{file_id}/save",
+            json={"folder_path": "archive/duplicate-name", "filename": "ignored.txt", "document_overview": []},
+        )
+        assert save_res.status_code == 200, save_res.text
+        paths.append(save_res.json()["archived_file_path"].replace("\\", "/"))
+
+    assert paths[0].endswith("_duplicate.txt")
+    assert paths[1].endswith("_duplicate(1).txt")
+    assert paths[0] != paths[1]
+    for file_id in file_ids:
+        client.delete(f"/api/v1/documents/{file_id}")
+
+
+def test_update_all_ai_results_persists_schema_and_markdown():
+    res = client.post(
+        "/api/v1/documents/analyze",
+        files={"file": ("editable-results.txt", FULL_DOC_CONTENT, "text/plain")},
+    )
+    assert res.status_code == 200
+    file_id = res.json()["data"]["file_id"]
+    data = res.json()["data"]
+    save_res = client.post(
+        f"/api/v1/documents/{file_id}/save",
+        json={"folder_path": "archive/editable-results", "filename": "ignored.txt", "document_overview": ["초기"]},
+    )
+    assert save_res.status_code == 200
+
+    edited = {
+        "analysis_data": data["analysis_data"],
+        "summary_data": data["summary_data"],
+        "verification_data": data["verification_data"],
+    }
+    edited["analysis_data"]["document_subject"] = "사용자 수정 분석 주제"
+    edited["summary_data"]["document_overview"] = ["사용자 수정 요약"]
+    edited["verification_data"]["status_badge"] = "사용자 확인"
+    update_res = client.put(f"/api/v1/documents/{file_id}/results", json=edited)
+    assert update_res.status_code == 200, update_res.text
+
+    result_res = client.get(f"/api/v1/documents/{file_id}/result")
+    assert result_res.json()["data"]["analysis_data"]["document_subject"] == "사용자 수정 분석 주제"
+    assert result_res.json()["data"]["verification_data"]["status_badge"] == "사용자 확인"
+    md_path = os.path.splitext(save_res.json()["archived_file_path"])[0] + ".md"
+    with open(md_path, encoding="utf-8") as markdown_file:
+        markdown = markdown_file.read()
+    assert "사용자 수정 분석 주제" in markdown
+    assert "사용자 확인" in markdown
+    client.delete(f"/api/v1/documents/{file_id}")

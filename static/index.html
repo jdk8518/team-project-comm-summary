@@ -180,6 +180,7 @@
     }
 
     .error-card h3 { color: var(--accent-rose); font-size: 1.2rem; margin-bottom: 0.5rem; }
+    .ai-error-card { border: 1px solid rgba(248, 113, 113, 0.55); background: rgba(127, 29, 29, 0.22); color: #fecaca; padding: 0.85rem 1rem; border-radius: 8px; margin-bottom: 1rem; }
 
     .btn-retry {
       margin-top: 1rem;
@@ -317,9 +318,9 @@
       margin-bottom: 1.5rem;
     }
 
-    .search-layout { display: grid; grid-template-columns: minmax(220px, 270px) minmax(0, 0.95fr) minmax(280px, 0.9fr); gap: 1.25rem; }
+    .search-layout { display: grid; grid-template-columns: minmax(220px, 270px) minmax(0, 1fr); gap: 1.25rem; }
     .folder-tree-panel, .search-detail-panel { border-right: 1px solid var(--card-border); padding-right: 1rem; min-height: 280px; }
-    .search-detail-panel { border-right: 0; border-left: 1px solid var(--card-border); padding-right: 0; padding-left: 1rem; }
+    .search-detail-panel { display:none; }
     .folder-tree-node { margin: 0.15rem 0; }
     .folder-tree-row { display:flex; align-items:center; gap:0.35rem; width:100%; padding:0.38rem 0.45rem; color:var(--text-sub); background:transparent; border:0; border-radius:6px; text-align:left; cursor:pointer; }
     .folder-tree-row:hover, .folder-tree-row.selected { color:#f1f5f9; background:rgba(96, 165, 250, 0.15); }
@@ -329,7 +330,24 @@
     .detail-empty { color: var(--text-sub); font-size: 0.9rem; padding: 1rem 0; }
     .detail-actions { display:flex; gap:0.6rem; flex-wrap:wrap; margin-top:1rem; }
     .detail-actions .btn-action { width:auto; margin-top:0; padding:0.65rem 0.85rem; font-size:0.82rem; }
-    @media (max-width: 1040px) { .search-layout { grid-template-columns:minmax(210px, 260px) minmax(0, 1fr); } .search-detail-panel { grid-column:1 / -1; border-left:0; border-top:1px solid var(--card-border); padding:1rem 0 0; } }
+    .search-card-actions { display:flex; gap:0.45rem; margin-top:0.8rem; padding-top:0.75rem; border-top:1px solid rgba(148, 163, 184, 0.16); }
+    .search-card-actions button { border:1px solid rgba(148, 163, 184, 0.3); border-radius:6px; padding:0.38rem 0.7rem; color:#e2e8f0; background:rgba(51, 65, 85, 0.7); cursor:pointer; font-size:0.78rem; }
+    .search-card-actions button:hover { background:rgba(96, 165, 250, 0.24); border-color:var(--accent-blue); }
+    .markdown-viewer-content { max-height: 68vh; overflow:auto; color:#e2e8f0; line-height:1.7; }
+    .markdown-viewer-content h1, .markdown-viewer-content h2, .markdown-viewer-content h3 { color:#93c5fd; margin:1rem 0 0.5rem; }
+    .markdown-viewer-content p { margin:0.45rem 0; }
+    .markdown-viewer-content ul, .markdown-viewer-content ol { margin:0.4rem 0 0.8rem 1.4rem; }
+    .markdown-viewer-content blockquote { margin:0.7rem 0; padding:0.45rem 0.8rem; border-left:3px solid #60a5fa; color:#cbd5e1; background:rgba(30,41,59,0.5); }
+    .markdown-viewer-content code { padding:0.1rem 0.3rem; border-radius:4px; background:rgba(15,23,42,0.8); color:#fbbf24; }
+    .markdown-viewer-overlay { padding:0; background:var(--bg-dark); backdrop-filter:none; align-items:stretch; }
+    .markdown-viewer-shell { display:flex; flex-direction:column; width:100%; max-width:none; height:100vh; max-height:none; border:0; border-radius:0; }
+    .markdown-viewer-shell .markdown-viewer-content { flex:1; max-height:none; padding:1.5rem 2rem; }
+    .markdown-viewer-header { display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:1rem 1.4rem; border-bottom:1px solid var(--card-border); background:rgba(15,23,42,0.96); }
+    .markdown-viewer-header-actions { display:flex; gap:0.5rem; }
+    .markdown-viewer-header-actions button { margin:0; width:auto; padding:0.5rem 0.8rem; font-size:0.82rem; }
+    .compact-actions { display:flex; gap:0.45rem; flex-wrap:wrap; }
+    .compact-actions .btn-action { width:auto; margin-top:0; padding:0.4rem 0.65rem; font-size:0.76rem; }
+    @media (max-width: 1040px) { .search-layout { grid-template-columns:minmax(210px, 260px) minmax(0, 1fr); } }
     @media (max-width: 760px) { .search-bar { flex-direction:column; } .search-layout { grid-template-columns:1fr; } .folder-tree-panel { border-right:0; border-bottom:1px solid var(--card-border); padding:0 0 1rem; } }
 
     .search-card-item {
@@ -440,11 +458,15 @@
         <div class="section-title"><span>📁</span> 추천 아카이빙 경로 및 파일명 (수정 가능)</div>
         <div style="margin-bottom: 1rem;">
           <label style="font-size: 0.85rem; color: var(--text-sub);">추천 저장 폴더 경로</label>
-          <input type="text" class="form-input" id="editFolder" placeholder="예: archive/디지털혁신팀/">
+          <div style="display:flex; gap:0.5rem; align-items:center;">
+            <input type="text" class="form-input" id="editFolder" placeholder="예: archive/디지털혁신팀/" style="margin-top:0; flex:1;">
+            <button class="btn-action" style="width:auto; margin-top:0; padding:0.45rem 0.7rem; font-size:0.78rem;" onclick="loadUploadFolderRecommend()">추천경로</button>
+          </div>
+          <div id="uploadFolderRecommendList" style="margin-top:0.5rem;"></div>
         </div>
         <div>
           <label style="font-size: 0.85rem; color: var(--text-sub);">추천 재지정 파일명</label>
-          <input type="text" class="form-input" id="editFilename" placeholder="예: 2026_PDF_업무보고.pdf">
+          <input type="text" class="form-input" id="editFilename" readonly placeholder="YYYY-MM-DD_원본파일명(순번).확장자">
         </div>
       </div>
 
@@ -459,7 +481,7 @@
 
         <div style="margin-bottom: 1.2rem;">
           <h4 style="font-size: 0.95rem; color: var(--text-sub); margin-bottom: 0.4rem;">문서 작성 목적</h4>
-          <p id="resPurpose" style="color: #cbd5e1; font-size: 0.95rem;"></p>
+          <textarea class="form-textarea" id="editPurpose" rows="2"></textarea>
         </div>
 
         <div style="margin-bottom: 1.2rem;">
@@ -469,7 +491,7 @@
 
         <div>
           <h4 style="font-size: 0.95rem; color: var(--text-sub); margin-bottom: 0.4rem;">결론 및 핵심 메시지</h4>
-          <p id="resConclusion" style="color: #a78bfa; font-weight: 600; font-size: 0.98rem;"></p>
+          <textarea class="form-textarea" id="editConclusion" rows="2"></textarea>
         </div>
 
         <!-- Save Button -->
@@ -479,11 +501,11 @@
       <!-- 4. 주요 키워드 Card -->
       <div class="card">
         <div class="section-title"><span>🏷️</span> 5대 범주 주요 키워드</div>
-        <div style="margin-bottom: 0.8rem;"><label style="font-size: 0.82rem; color: var(--text-sub);">인물</label><div class="pill-group" id="resKeyPersons"></div></div>
-        <div style="margin-bottom: 0.8rem;"><label style="font-size: 0.82rem; color: var(--text-sub);">기관 / 소속부서</label><div class="pill-group" id="resKeyOrgs"></div></div>
-        <div style="margin-bottom: 0.8rem;"><label style="font-size: 0.82rem; color: var(--text-sub);">일정 / 날짜</label><div class="pill-group" id="resKeySchedules"></div></div>
-        <div style="margin-bottom: 0.8rem;"><label style="font-size: 0.82rem; color: var(--text-sub);">주요 수치 / 단위</label><div class="pill-group" id="resKeyMetrics"></div></div>
-        <div><label style="font-size: 0.82rem; color: var(--text-sub);">핵심 개념</label><div class="pill-group" id="resKeyConcepts"></div></div>
+        <div style="margin-bottom: 0.8rem;"><label style="font-size: 0.82rem; color: var(--text-sub);">인물 (쉼표 구분)</label><input class="form-input" id="editKeyPersons"></div>
+        <div style="margin-bottom: 0.8rem;"><label style="font-size: 0.82rem; color: var(--text-sub);">기관 / 소속부서</label><input class="form-input" id="editKeyOrgs"></div>
+        <div style="margin-bottom: 0.8rem;"><label style="font-size: 0.82rem; color: var(--text-sub);">일정 / 날짜</label><input class="form-input" id="editKeySchedules"></div>
+        <div style="margin-bottom: 0.8rem;"><label style="font-size: 0.82rem; color: var(--text-sub);">주요 수치 / 단위</label><input class="form-input" id="editKeyMetrics"></div>
+        <div><label style="font-size: 0.82rem; color: var(--text-sub);">핵심 개념</label><input class="form-input" id="editKeyConcepts"></div>
       </div>
 
       <!-- 5. 검증 상태 & 이슈 Card -->
@@ -554,6 +576,19 @@
     </div>
 
     <div style="margin-bottom: 1.2rem;">
+      <label style="font-size: 0.85rem; color: var(--text-sub);">문서 목적</label>
+      <textarea class="form-textarea" id="modalPurpose" rows="2"></textarea>
+      <label style="font-size: 0.85rem; color: var(--text-sub);">핵심 메시지</label>
+      <textarea class="form-textarea" id="modalConclusion" rows="2"></textarea>
+      <label style="font-size: 0.85rem; color: var(--text-sub);">키워드 (범주별 쉼표 구분)</label>
+      <input class="form-input" id="modalKeyPersons" placeholder="인물 (쉼표 구분)">
+      <input class="form-input" id="modalKeyOrgs" placeholder="기관 / 소속부서 (쉼표 구분)">
+      <input class="form-input" id="modalKeySchedules" placeholder="일정 / 날짜 (쉼표 구분)">
+      <input class="form-input" id="modalKeyMetrics" placeholder="주요 수치 / 단위 (쉼표 구분)">
+      <input class="form-input" id="modalKeyConcepts" placeholder="핵심 개념 (쉼표 구분)">
+    </div>
+
+    <div style="margin-bottom: 1.2rem;">
       <label style="font-size: 0.85rem; color: var(--text-sub); display:block; margin-bottom:0.4rem;">📁 저장 경로 (수정 가능)</label>
       <div style="display:flex; gap:0.6rem; align-items:center;">
         <input type="text" class="form-input" id="modalFolderPath" placeholder="예: archive/디지털혁신팀" style="margin-top:0; flex:1;">
@@ -566,11 +601,28 @@
 
     <div id="modalDetailContent" style="margin-bottom: 1.5rem;"></div>
 
-    <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
-      <button class="btn-action btn-save" style="margin-top:0;" onclick="submitModalUpdate()">✏️ 요약 수정하여 DB 반영</button>
-      <button class="btn-action" style="margin-top:0; background: linear-gradient(135deg, #0ea5e9, #2563eb);" onclick="submitModalMove()">📂 경로 변경 및 파일 이동</button>
-      <button class="btn-action btn-download" style="margin-top:0;" onclick="submitModalDownload()">📥 1-Click 원본 파일 다운로드</button>
-      <button class="btn-action" style="margin-top:0; background: linear-gradient(135deg, var(--accent-rose), #dc2626);" onclick="submitModalDelete()">🗑️ 파일 삭제</button>
+    <div class="compact-actions">
+      <button class="btn-action btn-save" onclick="submitModalUpdate()">DB반영</button>
+      <button class="btn-action" onclick="submitModalMove()">경로변경</button>
+      <button class="btn-action btn-download" onclick="submitModalDownload()">다운로드</button>
+      <button class="btn-action" style="background: linear-gradient(135deg, var(--accent-rose), #dc2626);" onclick="submitModalDelete()">파일삭제</button>
+    </div>
+  </div>
+</div>
+
+<!-- Rendered Markdown Viewer -->
+<div class="modal-overlay markdown-viewer-overlay" id="markdownViewer" role="dialog" aria-modal="true" aria-labelledby="markdownViewerTitle">
+  <div class="modal-content card markdown-viewer-shell">
+    <div class="markdown-viewer-header">
+      <h3 id="markdownViewerTitle" style="font-size:1.3rem; color:#60a5fa;">📝 문서 요약 MD</h3>
+      <div class="markdown-viewer-header-actions">
+        <button class="btn-action btn-save" onclick="editMarkdownDocument()">수정</button>
+        <button class="btn-action btn-download" onclick="downloadMarkdownOriginal()">다운로드</button>
+        <button class="btn-action" onclick="closeMarkdownViewer()">닫기</button>
+      </div>
+    </div>
+    <div id="markdownViewerContent" class="markdown-viewer-content">
+      <p class="detail-empty">Markdown을 불러오는 중...</p>
     </div>
   </div>
 </div>
@@ -579,6 +631,9 @@
   let selectedFile = null;
   let currentFileId = null;
   let activeModalFileId = null;
+  let markdownViewerFileId = null;
+  let currentResultData = null;
+  let modalResultData = null;
   let selectedFolderPath = '';
   let highlightedFileId = null;
   let selectedSearchFileId = null;
@@ -693,6 +748,8 @@
     const filename = document.getElementById('editFilename').value.trim();
     const overviewRaw = document.getElementById('editOverview').value;
     const overviewList = overviewRaw.split('\n').map(s => s.trim()).filter(s => s.length > 0);
+    const editedResults = buildEditedResults(currentResultData, 'edit');
+    editedResults.summary_data.document_overview = overviewList;
 
     if (!folderPath || !filename) {
       alert('저장 폴더 경로와 파일명을 입력하십시오.');
@@ -706,7 +763,8 @@
         body: JSON.stringify({
           folder_path: folderPath,
           filename: filename,
-          document_overview: overviewList
+          document_overview: overviewList,
+          ...editedResults
         })
       });
 
@@ -728,9 +786,27 @@
   }
 
   function showError(msg) {
-    document.getElementById('errorMessage').textContent = msg;
-    document.getElementById('errorState').style.display = 'block';
+    setDomText('errorMessage', msg);
+    setDomStyle('errorState', 'display', 'block');
     btnAnalyze.disabled = false;
+  }
+
+  function setDomText(id, value) {
+    const element = document.getElementById(id);
+    if (element) element.textContent = value;
+    return element;
+  }
+
+  function setDomValue(id, value) {
+    const element = document.getElementById(id);
+    if (element) element.value = value;
+    return element;
+  }
+
+  function setDomStyle(id, property, value) {
+    const element = document.getElementById(id);
+    if (element) element.style[property] = value;
+    return element;
   }
 
   function showToast(msg) {
@@ -740,21 +816,26 @@
   }
 
   function renderResult(data) {
+    currentResultData = data;
+    renderAiErrors(data);
     const info = data.document_info || {};
-    document.getElementById('resFilename').textContent = info.original_filename || '-';
-    document.getElementById('resFormat').textContent = info.format || '-';
-    document.getElementById('resSize').textContent = info.size_formatted || '-';
-    document.getElementById('resUploadedAt').textContent = info.uploaded_at || '-';
+    setDomText('resFilename', info.original_filename || '-');
+    setDomText('resFormat', info.format || '-');
+    setDomText('resSize', info.size_formatted || '-');
+    setDomText('resUploadedAt', info.uploaded_at || '-');
 
     const arch = data.archiving_info || {};
-    document.getElementById('editFolder').value = displayArchivePath(arch.recommended_folder || 'output/archive/디지털혁신팀/');
-    document.getElementById('editFilename').value = arch.recommended_filename || info.original_filename;
+    setDomValue('editFolder', displayArchivePath(arch.recommended_folder || 'output/archive/디지털혁신팀/'));
+    setDomValue('editFilename', arch.recommended_filename || info.original_filename);
 
     const sData = data.summary_data || {};
-    document.getElementById('editOverview').value = (sData.document_overview || []).join('\n');
-    document.getElementById('resPurpose').textContent = sData.document_purpose || '-';
+    setDomValue('editOverview', (sData.document_overview || []).join('\n'));
+    setDomValue('editPurpose', sData.document_purpose || '');
+    setDomValue('editConclusion', sData.conclusion_or_core_message || '');
+    setKeywordInputs('edit', (data.analysis_data || {}).key_keywords || {});
 
     const mainListDiv = document.getElementById('resMainContentsList');
+    if (!mainListDiv) return;
     mainListDiv.innerHTML = '';
     (sData.main_contents_list || []).forEach(cat => {
       const box = document.createElement('div');
@@ -770,21 +851,16 @@
       mainListDiv.appendChild(box);
     });
 
-    document.getElementById('resConclusion').textContent = sData.conclusion_or_core_message || '-';
 
     const vData = data.verification_data || {};
-    document.getElementById('resStatusBadge').textContent = vData.status_badge || '확인 필요';
-    document.getElementById('resIsPassed').textContent = vData.is_passed ? '검증 완료' : '검증 미통과';
+    setDomText('resStatusBadge', vData.status_badge || '확인 필요');
+    setDomText('resIsPassed', vData.is_passed ? '검증 완료' : '검증 미통과');
 
     const aData = data.analysis_data || {};
     const kw = aData.key_keywords || {};
-    renderPills('resKeyPersons', kw.persons);
-    renderPills('resKeyOrgs', kw.organizations);
-    renderPills('resKeySchedules', kw.schedules);
-    renderPills('resKeyMetrics', kw.metrics);
-    renderPills('resKeyConcepts', kw.concepts);
 
     const issueDiv = document.getElementById('resIssueList');
+    if (!issueDiv) return;
     issueDiv.innerHTML = '';
     const issues = vData.issue_list || [];
     if (issues.length === 0) {
@@ -803,6 +879,7 @@
     }
 
     const chkDiv = document.getElementById('resHumanChecklist');
+    if (!chkDiv) return;
     chkDiv.innerHTML = '';
     const chks = vData.human_review_checklist || [];
     chks.forEach((chk, idx) => {
@@ -818,7 +895,34 @@
       chkDiv.appendChild(div);
     });
 
-    document.getElementById('resultSection').style.display = 'block';
+    setDomStyle('resultSection', 'display', 'block');
+  }
+
+  function renderAiErrors(data) {
+    const resultSection = document.getElementById('resultSection');
+    if (!resultSection) return;
+    const existing = document.getElementById('aiErrorCard');
+    if (existing) existing.remove();
+    const errors = [
+      ['분석', data.analysis_data],
+      ['요약', data.summary_data],
+      ['검증', data.verification_data]
+    ].filter(([, item]) => item && item.error_message);
+    if (!errors.length) return;
+    const card = document.createElement('div');
+    card.id = 'aiErrorCard';
+    card.className = 'ai-error-card';
+    const title = document.createElement('strong');
+    title.textContent = 'AI 처리 중 일부 오류가 발생했습니다.';
+    card.appendChild(title);
+    const list = document.createElement('ul');
+    errors.forEach(([label, item]) => {
+      const li = document.createElement('li');
+      li.textContent = `${label}: ${item.error_message}`;
+      list.appendChild(li);
+    });
+    card.appendChild(list);
+    resultSection.prepend(card);
   }
 
   function renderPills(containerId, list) {
@@ -867,6 +971,45 @@
     } catch (err) {
       treeDiv.innerHTML = `<p style="color:#f87171; font-size:0.85rem;">오류: ${err.message}</p>`;
     }
+  }
+
+  function splitKeywords(value) {
+    return String(value || '').split(',').map(item => item.trim()).filter(Boolean);
+  }
+
+  function setKeywordInputs(prefix, keywords) {
+    const values = keywords || {};
+    setDomValue(`${prefix}KeyPersons`, (values.persons || []).join(', '));
+    setDomValue(`${prefix}KeyOrgs`, (values.organizations || []).join(', '));
+    setDomValue(`${prefix}KeySchedules`, (values.schedules || []).join(', '));
+    setDomValue(`${prefix}KeyMetrics`, (values.metrics || []).join(', '));
+    setDomValue(`${prefix}KeyConcepts`, (values.concepts || []).join(', '));
+  }
+
+  function readDomValue(id) {
+    const element = document.getElementById(id);
+    return element ? element.value : '';
+  }
+
+  function readKeywordInputs(prefix) {
+    return {
+      persons: splitKeywords(readDomValue(`${prefix}KeyPersons`)),
+      organizations: splitKeywords(readDomValue(`${prefix}KeyOrgs`)),
+      schedules: splitKeywords(readDomValue(`${prefix}KeySchedules`)),
+      metrics: splitKeywords(readDomValue(`${prefix}KeyMetrics`)),
+      concepts: splitKeywords(readDomValue(`${prefix}KeyConcepts`))
+    };
+  }
+
+  function buildEditedResults(data, prefix) {
+    const result = JSON.parse(JSON.stringify(data || {}));
+    result.analysis_data = result.analysis_data || {};
+    result.summary_data = result.summary_data || {};
+    result.verification_data = result.verification_data || {};
+    result.summary_data.document_purpose = readDomValue(`${prefix}Purpose`).trim();
+    result.summary_data.conclusion_or_core_message = readDomValue(`${prefix}Conclusion`).trim();
+    result.analysis_data.key_keywords = readKeywordInputs(prefix);
+    return result;
   }
 
   function createFolderTreeNode(node, isRoot = false) {
@@ -942,17 +1085,10 @@
         return;
       }
 
-      if (!selectedSearchFileId || !data.data.some(item => item.file_id === selectedSearchFileId)) {
-        selectedSearchFileId = highlightedFileId && data.data.some(item => item.file_id === highlightedFileId)
-          ? highlightedFileId
-          : data.data[0].file_id;
-      }
-
       data.data.forEach(item => {
         const itemCard = document.createElement('div');
-        itemCard.className = `search-card-item ${item.file_id === selectedSearchFileId ? 'selected' : ''}`;
-        itemCard.dataset.searchFileId = item.file_id;
-        itemCard.onclick = () => selectSearchFile(item.file_id);
+        itemCard.className = 'search-card-item';
+        itemCard.onclick = () => viewSummaryMarkdown(item.file_id);
         itemCard.innerHTML = `
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 0.4rem;">
             <h4 style="font-size: 1.05rem; color: #60a5fa;">📄 ${item.renamed_filename || item.original_filename}</h4>
@@ -968,14 +1104,139 @@
             <span>신뢰도 점수: <strong style="color:#34d399;">${item.confidence_score}점</strong></span>
           </div>
         `;
+        const actions = document.createElement('div');
+        actions.className = 'search-card-actions';
+        actions.appendChild(createSearchActionButton('수정', () => openSummaryModal(item.file_id)));
+        actions.appendChild(createSearchActionButton('다운로드', () => downloadOriginal(item.file_id)));
+        itemCard.appendChild(actions);
         listDiv.appendChild(itemCard);
       });
-
-      await selectSearchFile(selectedSearchFileId);
 
     } catch (err) {
       alert('검색 중 오류 발생: ' + err.message);
     }
+  }
+
+  function createSearchActionButton(label, handler) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = label;
+    button.onclick = (event) => {
+      event.stopPropagation();
+      handler();
+    };
+    return button;
+  }
+
+  async function viewSummaryMarkdown(fileId) {
+    markdownViewerFileId = fileId;
+    selectedSearchFileId = fileId;
+    const viewer = document.getElementById('markdownViewer');
+    const content = document.getElementById('markdownViewerContent');
+    viewer.style.display = 'flex';
+    content.innerHTML = '<p class="detail-empty">Markdown을 불러오는 중...</p>';
+    try {
+      const response = await fetch(`/api/v1/documents/${fileId}/markdown`);
+      const markdown = await response.text();
+      if (!response.ok) {
+        throw new Error(markdown || 'Markdown 파일을 불러올 수 없습니다.');
+      }
+      content.innerHTML = renderMarkdown(markdown);
+    } catch (err) {
+      content.innerHTML = `<p class="detail-empty" style="color:#fca5a5;">${escapeHtml(err.message)}</p>`;
+    }
+  }
+
+  function closeMarkdownViewer() {
+    document.getElementById('markdownViewer').style.display = 'none';
+    markdownViewerFileId = null;
+    switchTab('search');
+  }
+
+  function editMarkdownDocument() {
+    if (!markdownViewerFileId) return;
+    const fileId = markdownViewerFileId;
+    closeMarkdownViewer();
+    openSummaryModal(fileId);
+  }
+
+  function downloadMarkdownOriginal() {
+    if (!markdownViewerFileId) return;
+    downloadOriginal(markdownViewerFileId);
+  }
+
+  function escapeHtml(value) {
+    return String(value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  function renderMarkdown(markdown) {
+    const lines = String(markdown || '').split(/\r?\n/);
+    const html = [];
+    let paragraph = [];
+    let listType = null;
+
+    const closeParagraph = () => {
+      if (paragraph.length) {
+        html.push(`<p>${inlineMarkdown(paragraph.join(' '))}</p>`);
+        paragraph = [];
+      }
+    };
+    const closeList = () => {
+      if (listType) {
+        html.push(`</${listType}>`);
+        listType = null;
+      }
+    };
+
+    lines.forEach(line => {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        closeParagraph();
+        closeList();
+        return;
+      }
+      const heading = trimmed.match(/^(#{1,3})\s+(.+)$/);
+      if (heading) {
+        closeParagraph(); closeList();
+        const level = heading[1].length;
+        html.push(`<h${level}>${inlineMarkdown(heading[2])}</h${level}>`);
+        return;
+      }
+      const unordered = trimmed.match(/^[-*]\s+(.+)$/);
+      const ordered = trimmed.match(/^\d+\.\s+(.+)$/);
+      if (unordered || ordered) {
+        closeParagraph();
+        const nextType = unordered ? 'ul' : 'ol';
+        if (listType !== nextType) { closeList(); html.push(`<${nextType}>`); listType = nextType; }
+        html.push(`<li>${inlineMarkdown((unordered || ordered)[1])}</li>`);
+        return;
+      }
+      if (trimmed.startsWith('>')) {
+        closeParagraph(); closeList();
+        html.push(`<blockquote>${inlineMarkdown(trimmed.replace(/^>\s?/, ''))}</blockquote>`);
+        return;
+      }
+      closeList();
+      paragraph.push(trimmed);
+    });
+    closeParagraph(); closeList();
+    return html.join('');
+  }
+
+  function inlineMarkdown(value) {
+    let escaped = escapeHtml(value);
+    escaped = escaped.replace(/`([^`]+)`/g, '<code>$1</code>');
+    escaped = escaped.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    return escaped;
+  }
+
+  function downloadOriginal(fileId) {
+    window.location.href = `/api/v1/documents/${fileId}/download`;
   }
 
   async function selectSearchFile(fileId) {
@@ -1102,11 +1363,15 @@
       }
 
       const data = resData.data;
+      modalResultData = data;
       const sData = data.summary_data || {};
       const archInfo = data.archiving_info || {};
 
       document.getElementById('modalOverviewEdit').value = (sData.document_overview || []).join('\n');
-      document.getElementById('modalFolderPath').value = archInfo.recommended_folder || '';
+      document.getElementById('modalPurpose').value = sData.document_purpose || '';
+      document.getElementById('modalConclusion').value = sData.conclusion_or_core_message || '';
+      setKeywordInputs('modal', (data.analysis_data || {}).key_keywords || {});
+      document.getElementById('modalFolderPath').value = displayArchivePath(archInfo.recommended_folder || '');
       document.getElementById('folderRecommendList').innerHTML = '';
 
       const detailDiv = document.getElementById('modalDetailContent');
@@ -1133,12 +1398,14 @@
 
     const rawOverview = document.getElementById('modalOverviewEdit').value;
     const overviewList = rawOverview.split('\n').map(s => s.trim()).filter(s => s.length > 0);
+    const editedResults = buildEditedResults(modalResultData, 'modal');
+    editedResults.summary_data.document_overview = overviewList;
 
     try {
-      const res = await fetch(`/api/v1/documents/${activeModalFileId}/summary`, {
+      const res = await fetch(`/api/v1/documents/${activeModalFileId}/results`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ overview_summary: overviewList })
+        body: JSON.stringify(editedResults)
       });
 
       const data = await res.json();
@@ -1190,7 +1457,18 @@
     listDiv.innerHTML = '<span style="color:var(--text-sub); font-size:0.8rem;">추천 경로 조회 중...</span>';
 
     try {
-      const res = await fetch(`/api/v1/documents/${activeModalFileId}/recommend-folder`);
+      const folders = await loadArchiveFolderPaths();
+      const res = await fetch(`/api/v1/documents/${activeModalFileId}/recommend-folder`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          summary: document.getElementById('modalOverviewEdit').value.split('\n').filter(Boolean),
+          purpose: document.getElementById('modalPurpose').value,
+          message: document.getElementById('modalConclusion').value,
+          keywords: readKeywordInputs('modal'),
+          folders
+        })
+      });
       const data = await res.json();
       if (!res.ok || !data.success) {
         listDiv.innerHTML = '<span style="color:#f87171; font-size:0.8rem;">추천 경로를 불러올 수 없습니다.</span>';
@@ -1221,6 +1499,43 @@
 
   function applyRecommendedFolder(folderPath) {
     document.getElementById('modalFolderPath').value = folderPath;
+  }
+
+  async function loadUploadFolderRecommend() {
+    if (!currentFileId || !currentResultData) return;
+    const listDiv = document.getElementById('uploadFolderRecommendList');
+    listDiv.innerHTML = '<span style="color:var(--text-sub); font-size:0.8rem;">추천 경로 조회 중...</span>';
+    try {
+      const res = await fetch(`/api/v1/documents/${currentFileId}/recommend-folder`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          summary: document.getElementById('editOverview').value.split('\n').filter(Boolean),
+          purpose: document.getElementById('editPurpose').value,
+          message: document.getElementById('editConclusion').value,
+          keywords: readKeywordInputs('edit'),
+          folders: await loadArchiveFolderPaths()
+        })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.detail || '추천 경로를 불러올 수 없습니다.');
+      listDiv.innerHTML = data.recommendations.map(r => `<button type="button" onclick="document.getElementById('editFolder').value='${escapeHtml(displayArchivePath(r.folder_path))}'" style="margin:0.15rem;">${escapeHtml(displayArchivePath(r.folder_path))}</button>`).join('');
+    } catch (err) {
+      listDiv.innerHTML = `<span style="color:#f87171; font-size:0.8rem;">오류: ${escapeHtml(err.message)}</span>`;
+    }
+  }
+
+  async function loadArchiveFolderPaths() {
+    const res = await fetch('/api/v1/documents/folder-tree');
+    const data = await res.json();
+    const paths = new Set(['output']);
+    const visit = node => {
+      if (!node) return;
+      if (node.path) paths.add(normalizeArchivePath(node.path));
+      Object.values(node.children || {}).forEach(visit);
+    };
+    Object.values(data.folders || {}).forEach(visit);
+    return [...paths];
   }
 
   async function submitModalDelete() {

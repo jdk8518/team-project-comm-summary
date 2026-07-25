@@ -3,6 +3,7 @@ uvicorn>=0.22.0
 pydantic>=2.0
 python-multipart>=0.0.6
 python-hwpx>=0.1.0
+docpler>=1.0.5
 pymupdf>=1.22.0
 python-docx>=0.8.11
 python-pptx>=0.6.21

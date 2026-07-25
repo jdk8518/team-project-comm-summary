@@ -2,13 +2,15 @@ import os
 import uuid
 from typing import Optional, List
 from fastapi import APIRouter, UploadFile, File, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import PlainTextResponse, StreamingResponse
 import io
 
 from app.schemas import (
     IntegratedResultResponse, IntegratedResultData, DocumentInfo, ArchivingInfo,
     AnalysisData, SummaryResult, ValidationResult,
     SaveDocumentRequest, SaveDocumentResponse,
+    DocumentResultsUpdate,
+    FolderRecommendRequest,
     SearchResponse, SearchItem, SummaryUpdateRequest,
     MoveFileRequest, MoveFileResponse,
     FolderRecommendItem, FolderRecommendResponse,
@@ -18,6 +20,13 @@ from app.services import run_document_analysis, run_document_summarization, run_
 from app import db
 
 router = APIRouter(prefix="/api/v1/documents", tags=["Document AI Analysis System"])
+
+
+@router.get("/health/db", summary="MVP DB 연결 상태 조회 API")
+async def database_health():
+    """Expose the current backend status and its persistence limitation."""
+    status = db.get_database_status()
+    return {"success": status.get("connected", False), "data": status}
 
 @router.post("/analyze", response_model=IntegratedResultResponse, summary="문서 분석 통합 API (대시보드 UI 연동)")
 async def analyze_document(file: UploadFile = File(...)):
@@ -59,6 +68,23 @@ async def analyze_document(file: UploadFile = File(...)):
     analysis_data = run_document_analysis(file_id, raw_cleaned_text, structured_content_dict)
     db.update_document_analysis(file_id, analysis_data)
 
+    # AI 폴더 추천은 현재 파일 저장 루트에 실제로 존재하는 폴더만 후보로 사용한다.
+    folder_candidates = db.get_existing_archive_folders()
+    recommendation = recommend_folder(
+        folder_candidates,
+        [
+            doc_record_keyword
+            for doc_record_keyword in (
+                analysis_data.document_purpose,
+                *analysis_data.key_keywords.organizations,
+                *analysis_data.key_keywords.concepts,
+            )
+            if doc_record_keyword
+        ],
+    )
+    if recommendation:
+        db.update_document_recommendation(file_id, recommendation[0]["folder_path"])
+
     # 5. AI 요약 생성
     summary_data = run_document_summarization(file_id, raw_cleaned_text, analysis_data)
     db.update_document_summary(file_id, summary_data)
@@ -76,9 +102,13 @@ async def analyze_document(file: UploadFile = File(...)):
     size_formatted = f"{file_size / (1024*1024):.1f} MB" if file_size >= 1024*1024 else f"{file_size / 1024:.1f} KB"
     doc_record = db.get_document_by_id(file_id)
 
+    pipeline_has_ai_error = any(
+        getattr(result, "error_message", None)
+        for result in (analysis_data, summary_data.summary_result, validation_data.validation_result)
+    )
     integrated_data = IntegratedResultData(
         file_id=file_id,
-        status="COMPLETED",
+        status="ERROR" if pipeline_has_ai_error else "COMPLETED",
         document_info=DocumentInfo(
             original_filename=filename,
             format=format_str,
@@ -106,7 +136,10 @@ async def save_document(file_id: str, req: SaveDocumentRequest):
         file_id=file_id,
         folder_path=req.folder_path,
         filename=req.filename,
-        document_overview=req.document_overview
+        document_overview=req.document_overview,
+        analysis_data=req.analysis_data,
+        summary_data=req.summary_data,
+        verification_data=req.verification_data,
     )
 
     if not success:
@@ -196,6 +229,18 @@ async def update_summary(file_id: str, req: SummaryUpdateRequest):
         raise HTTPException(status_code=404, detail="요약 내용을 업데이트할 수 없습니다.")
     return {"success": True, "message": "요약 내용이 DB에 성공적으로 수정되었습니다."}
 
+@router.put("/{file_id}/results", summary="AI 분석·요약·검증 결과 전체 수정 API")
+async def update_document_results(file_id: str, req: DocumentResultsUpdate):
+    success = db.update_document_results(
+        file_id,
+        req.analysis_data,
+        req.summary_data,
+        req.verification_data,
+    )
+    if not success:
+        raise HTTPException(status_code=404, detail="문서 분석 결과를 업데이트할 수 없습니다.")
+    return {"success": True, "message": "AI 분석·요약·검증 결과가 DB와 Markdown에 저장되었습니다."}
+
 @router.get("/{file_id}/download", summary="원본 파일 1-Click 다운로드 API")
 async def download_original_file(file_id: str):
     file_data = db.get_document_file_bytes(file_id)
@@ -211,6 +256,22 @@ async def download_original_file(file_id: str):
         "Content-Disposition": f"attachment; filename=\"{encoded_filename}\"; filename*=UTF-8''{encoded_filename}"
     }
     return StreamingResponse(stream, media_type="application/octet-stream", headers=headers)
+
+
+@router.get("/{file_id}/markdown", summary="저장된 AI 요약 Markdown 조회 API")
+async def view_summary_markdown(file_id: str):
+    doc = db.get_document_by_id(file_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다.")
+    markdown_path = doc.get("summary_path")
+    if not markdown_path or not os.path.exists(markdown_path):
+        raise HTTPException(status_code=404, detail="저장된 요약 Markdown 파일이 없습니다.")
+    try:
+        with open(markdown_path, "r", encoding="utf-8") as markdown_file:
+            content = markdown_file.read()
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail="요약 Markdown 파일을 읽을 수 없습니다.") from exc
+    return PlainTextResponse(content, media_type="text/markdown", headers={"Content-Disposition": "inline"})
 
 @router.delete("/{file_id}", summary="DB 레코드 및 아카이빙 원본 파일 삭제 API")
 async def delete_document(file_id: str):
@@ -274,6 +335,22 @@ async def recommend_document_folder(file_id: str):
         success=True,
         file_id=file_id,
         recommendations=[FolderRecommendItem(**r) for r in recommendations],
+    )
+
+@router.post("/{file_id}/recommend-folder", response_model=FolderRecommendResponse, summary="수정 결과 기반 저장 경로 추천 API")
+async def recommend_document_folder_from_edits(file_id: str, req: FolderRecommendRequest):
+    doc = db.get_document_by_id(file_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다.")
+    folders = req.folders or db.get_existing_archive_folders()
+    keywords = [*req.summary, req.purpose, req.message]
+    for values in req.keywords.values():
+        keywords.extend(values or [])
+    recommendations = recommend_folder(folders, keywords)
+    return FolderRecommendResponse(
+        success=True,
+        file_id=file_id,
+        recommendations=[FolderRecommendItem(**item) for item in recommendations],
     )
 
 # Alias routes

@@ -57,3 +57,9 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```bash
 pytest tests/test_api.py
 ```
+
+### AI 프로바이더 설정
+
+`.env`에 `AI_PROVIDER`, `AI_API_KEY`, `AI_MODEL`을 설정합니다. `AI_PROVIDER`는 `openai`, `google`, `deepseek` 또는 테스트용 `mock`을 사용할 수 있습니다. 예시는 `.env.example`을 참고하세요.
+
+HWP(v5) 텍스트 추출은 `docpler`의 `docpler.hwp.convert()`를 사용하고, HWPX는 `python-hwpx`를 사용합니다. HWP 변환 실패나 손상된 HWPX 컨테이너는 분석 전에 파싱 오류로 반환합니다.

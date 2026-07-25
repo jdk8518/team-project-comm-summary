@@ -155,23 +155,52 @@ def _extract_docx(file_bytes: bytes) -> str:
 
 
 def _extract_hwp(file_bytes: bytes) -> str:
-    """HWPX/HWP 텍스트 추출. python-hwpx → zipfile XML → 바이너리 순으로 폴백."""
-    # 1차 시도: python-hwpx
+    """Extract HWP v5 with docpler or HWPX with python-hwpx."""
+    import zipfile
+    from tempfile import NamedTemporaryFile
+
+    # HWP v5 is an OLE Compound File, not an HWPX ZIP package.
+    if file_bytes.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"):
+        temp_path = None
+        try:
+            from docpler.hwp import convert
+
+            with NamedTemporaryFile(suffix=".hwp", delete=False) as temp_file:
+                temp_file.write(file_bytes)
+                temp_path = temp_file.name
+            text = convert(temp_path)
+            if not isinstance(text, str) or not text.strip():
+                raise ValueError("docpler가 빈 텍스트를 반환했습니다.")
+            return text
+        except ImportError as exc:
+            raise DocumentParsingError(
+                "HWP 텍스트 추출 라이브러리(docpler)가 설치되지 않았습니다.", status_code=422
+            ) from exc
+        except Exception as exc:
+            raise DocumentParsingError(
+                f"HWP 텍스트 추출에 실패했습니다: {type(exc).__name__}", status_code=422
+            ) from exc
+        finally:
+            if temp_path and os.path.exists(temp_path):
+                os.remove(temp_path)
+
+    # HWPX must be a valid ZIP package before any text parser is used.
+    if not zipfile.is_zipfile(io.BytesIO(file_bytes)):
+        raise DocumentParsingError(
+            "HWP/HWPX 파일 컨테이너가 손상되었거나 지원되지 않는 형식입니다.", status_code=422
+        )
+
     try:
         from hwpx import HwpxDocument
-        temp_path = "temp_parse.hwpx"
-        with open(temp_path, "wb") as f:
-            f.write(file_bytes)
-        doc = HwpxDocument.open(temp_path)
-        text = doc.get_text() if hasattr(doc, "get_text") else "\n\n".join(str(s) for s in doc.sections)
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-        return text
+
+        doc = HwpxDocument.open(io.BytesIO(file_bytes))
+        text = doc.export_text()
+        if isinstance(text, str) and text.strip():
+            return text
     except Exception:
         pass
 
-    # 2차 시도: zipfile XML 파싱
-    import zipfile
+    # XML fallback for valid HWPX packages when python-hwpx cannot read a feature.
     try:
         with zipfile.ZipFile(io.BytesIO(file_bytes)) as z:
             section_files = [f for f in z.namelist() if "section" in f.lower() or "content" in f.lower()]
@@ -179,13 +208,13 @@ def _extract_hwp(file_bytes: bytes) -> str:
             for sf in section_files:
                 content = z.read(sf).decode("utf-8", errors="ignore")
                 texts.append(re.sub(r"<[^>]+>", " ", content))
-            return "\n\n".join(texts)
-    except Exception:
-        pass
+            text = "\n\n".join(texts)
+            if text.strip():
+                return text
+    except Exception as exc:
+        raise DocumentParsingError("HWPX 텍스트 추출에 실패했습니다.", status_code=422) from exc
 
-    # 3차 폴백: 바이너리 문자열 추출
-    raw = file_bytes.decode("utf-8", errors="ignore")
-    return re.sub(r"[^\w\s\.\,\-\:\(\)가-힣]", " ", raw)
+    raise DocumentParsingError("HWPX 문서에서 텍스트를 추출하지 못했습니다.", status_code=422)
 
 
 def _extract_pptx(file_bytes: bytes) -> str:

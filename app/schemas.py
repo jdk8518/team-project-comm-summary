@@ -85,6 +85,7 @@ class AnalysisData(BaseModel):
     key_keywords: KeyKeywords
     verification_candidates: List[VerificationCandidate]
     evidence_grounding: List[EvidenceGrounding]
+    error_message: Optional[str] = None
 
 class AnalyzeResponse(BaseModel):
     success: bool = True
@@ -100,6 +101,7 @@ class SummaryResult(BaseModel):
     document_purpose: str = Field(..., description="문서 목적")
     main_contents_list: List[MainContentItem] = Field(..., description="주요 내용 목록")
     conclusion_or_core_message: str = Field(..., description="결론 또는 핵심 메시지")
+    error_message: Optional[str] = None
 
 class SummaryData(BaseModel):
     file_id: str
@@ -128,6 +130,7 @@ class ValidationResult(BaseModel):
     status_badge: str = Field(..., description="상태 뱃지 (정상, 확인 필요, 주의)")
     issue_list: List[ValidationIssueItem] = Field(..., description="확인이 필요한 문제 목록")
     human_review_checklist: List[HumanChecklistItem] = Field(..., description="사람이 확인할 항목")
+    error_message: Optional[str] = None
 
 class ValidationData(BaseModel):
     file_id: str
@@ -165,6 +168,9 @@ class SaveDocumentRequest(BaseModel):
     folder_path: str = Field(..., description="수정된 저장 대상 폴더 경로")
     filename: str = Field(..., description="수정된 파일명")
     document_overview: List[str] = Field(..., description="수정된 문서 개요 목록")
+    analysis_data: Optional[AnalysisData] = None
+    summary_data: Optional[SummaryResult] = None
+    verification_data: Optional[ValidationResult] = None
 
 class SaveDocumentResponse(BaseModel):
     success: bool = True
@@ -193,6 +199,12 @@ class SummaryUpdateRequest(BaseModel):
     one_line_summary: Optional[str] = None
     overview_summary: Optional[List[str]] = None
 
+class DocumentResultsUpdate(BaseModel):
+    """사용자가 수정한 분석·요약·검증 결과 전체를 저장하는 요청."""
+    analysis_data: AnalysisData
+    summary_data: SummaryResult
+    verification_data: ValidationResult
+
 # 8. File Move & Folder Recommend Schemas
 class MoveFileRequest(BaseModel):
     new_folder_path: str = Field(..., description="이동할 폴더 경로 (없으면 자동 생성)")
@@ -214,3 +226,10 @@ class FolderRecommendResponse(BaseModel):
     success: bool = True
     file_id: str
     recommendations: List[FolderRecommendItem]
+
+class FolderRecommendRequest(BaseModel):
+    summary: List[str] = []
+    purpose: str = ""
+    message: str = ""
+    keywords: Dict[str, List[str]] = {}
+    folders: List[str] = []

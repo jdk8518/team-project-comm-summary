@@ -25,29 +25,62 @@ from app.schemas import (
 # 공통 LLM 호출 헬퍼 (OpenAI / Gemini 중복 코드 제거)
 # ─────────────────────────────────────────────────────────────
 
-def _call_llm_api(prompt: str, system_msg: str, temperature: float = 0.2) -> dict | None:
+def _call_llm_api(prompt: str, system_msg: str, temperature: float = 0.2) -> tuple[dict | None, str | None]:
     """
     설정된 AI 프로바이더로 LLM API를 호출하고 JSON dict를 반환합니다.
     호출 실패 또는 파싱 실패 시 None을 반환하며, API 키는 로그에 출력하지 않습니다.
     """
     cfg = get_ai_config()
 
+    if cfg.provider == "mock":
+        return None, None
+
     if not is_api_key_valid(cfg.api_key):
-        return None
+        return None, f"{cfg.provider} AI API 키가 설정되지 않았습니다."
 
     if cfg.provider == "openai":
         return _call_openai(cfg.api_key, cfg.model, system_msg, prompt, temperature)
 
-    if cfg.provider in ("gemini", "google"):
-        return _call_gemini(cfg.api_key, cfg.model, prompt)
+    if cfg.provider in ("google", "gemini"):
+        return _call_google(cfg.api_key, cfg.model, system_msg, prompt)
 
-    return None
+    if cfg.provider == "deepseek":
+        return _call_deepseek(cfg.api_key, cfg.model, system_msg, prompt, temperature)
+
+    return None, f"지원하지 않는 AI provider입니다: {cfg.provider}"
 
 
-def _call_openai(api_key: str, model: str, system_msg: str, prompt: str, temperature: float) -> dict | None:
+def _call_openai(api_key: str, model: str, system_msg: str, prompt: str, temperature: float) -> tuple[dict | None, str | None]:
+    return _call_openai_compatible(api_key, model, system_msg, prompt, temperature)
+
+
+def _call_deepseek(api_key: str, model: str, system_msg: str, prompt: str, temperature: float) -> tuple[dict | None, str | None]:
+    return _call_openai_compatible(
+        api_key,
+        model,
+        system_msg,
+        prompt,
+        temperature,
+        base_url="https://api.deepseek.com",
+        provider_name="DeepSeek",
+    )
+
+
+def _call_openai_compatible(
+    api_key: str,
+    model: str,
+    system_msg: str,
+    prompt: str,
+    temperature: float,
+    base_url: str | None = None,
+    provider_name: str = "OpenAI",
+) -> tuple[dict | None, str | None]:
     try:
         from openai import OpenAI
-        client = OpenAI(api_key=api_key)
+        client_kwargs = {"api_key": api_key}
+        if base_url:
+            client_kwargs["base_url"] = base_url
+        client = OpenAI(**client_kwargs)
         response = client.chat.completions.create(
             model=model,
             response_format={"type": "json_object"},
@@ -57,26 +90,41 @@ def _call_openai(api_key: str, model: str, system_msg: str, prompt: str, tempera
             ],
             temperature=temperature,
         )
-        return json.loads(response.choices[0].message.content)
-    except Exception:
-        return None
+        content = response.choices[0].message.content
+        if not content:
+            return None, f"{provider_name} API가 빈 응답을 반환했습니다."
+        return json.loads(content), None
+    except json.JSONDecodeError:
+        return None, f"{provider_name} API 응답이 유효한 JSON이 아닙니다."
+    except Exception as exc:
+        return None, f"{provider_name} API 호출 실패: {type(exc).__name__}"
 
 
-def _call_gemini(api_key: str, model: str, prompt: str) -> dict | None:
+def _call_google(api_key: str, model: str, system_msg: str, prompt: str) -> tuple[dict | None, str | None]:
     try:
         url = (
             f"https://generativelanguage.googleapis.com/v1beta"
             f"/models/{model}:generateContent?key={api_key}"
         )
-        resp = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=15)
+        resp = requests.post(
+            url,
+            json={
+                "systemInstruction": {"parts": [{"text": system_msg}]},
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {"responseMimeType": "application/json"},
+            },
+            timeout=15,
+        )
         if resp.status_code != 200:
-            return None
+            return None, f"Google API가 HTTP {resp.status_code}를 반환했습니다."
         text_res = resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
         if "```json" in text_res:
             text_res = text_res.split("```json")[1].split("```")[0].strip()
-        return json.loads(text_res)
-    except Exception:
-        return None
+        return json.loads(text_res), None
+    except json.JSONDecodeError:
+        return None, "Google API 응답이 유효한 JSON이 아닙니다."
+    except Exception as exc:
+        return None, f"Google API 호출 실패: {type(exc).__name__}"
 
 
 # ─────────────────────────────────────────────────────────────
@@ -93,13 +141,15 @@ def run_document_analysis(
     prompt = _build_analysis_prompt(title, raw_text)
     system_msg = "You are a professional AI document analyst. Respond strictly in valid JSON."
 
-    parsed = _call_llm_api(prompt, system_msg, temperature=0.2)
+    parsed, ai_error = _call_llm_api(prompt, system_msg, temperature=0.2)
     if parsed:
         result = _parse_analysis_response(file_id, parsed, title)
         if result:
             return result
 
-    return _analysis_fallback(file_id, title, raw_text, structured_content)
+        ai_error = "AI 분석 응답의 JSON 구조가 올바르지 않습니다."
+
+    return _analysis_fallback(file_id, title, raw_text, structured_content, ai_error)
 
 
 def _build_analysis_prompt(title: str, raw_text: str) -> str:
@@ -157,6 +207,7 @@ def _analysis_fallback(
     title: str,
     raw_text: str,
     structured_content: Dict[str, Any],
+    error_message: Optional[str] = None,
 ) -> AnalysisData:
     """LLM 호출 실패 시 규칙 기반으로 분석 결과를 생성합니다."""
     cfg = get_ai_config()
@@ -185,7 +236,7 @@ def _analysis_fallback(
 
     return AnalysisData(
         file_id=file_id,
-        analysis_status="SUCCESS" if cfg.provider == "mock" else "WARNING",
+        analysis_status="SUCCESS" if cfg.provider == "mock" and not error_message else "ERROR",
         document_subject=f"{title} 중심 안건 및 주요 내용 보고",
         document_purpose=document_purpose,
         core_structure=core_structures,
@@ -213,6 +264,7 @@ def _analysis_fallback(
                 original_sentence=schedules[0] if schedules else "2026-08-31",
             )
         ],
+        error_message=error_message,
     )
 
 
@@ -229,13 +281,15 @@ def run_document_summarization(
     prompt = _build_summary_prompt(raw_text, analysis_data)
     system_msg = "You are a strict, factual document summarizer. Output strictly valid JSON."
 
-    parsed = _call_llm_api(prompt, system_msg, temperature=0.1)
+    parsed, ai_error = _call_llm_api(prompt, system_msg, temperature=0.1)
     if parsed:
         result = _parse_summary_response(file_id, parsed, analysis_data)
         if result:
             return result
 
-    return _summary_fallback(file_id, analysis_data)
+        ai_error = "AI 요약 응답의 JSON 구조가 올바르지 않습니다."
+
+    return _summary_fallback(file_id, analysis_data, ai_error)
 
 
 def _build_summary_prompt(raw_text: str, analysis_data: AnalysisData) -> str:
@@ -272,11 +326,12 @@ def _parse_summary_response(file_id: str, data: dict, analysis_data: AnalysisDat
         return None
 
 
-def _summary_fallback(file_id: str, analysis_data: AnalysisData) -> SummaryData:
+def _summary_fallback(file_id: str, analysis_data: AnalysisData, error_message: Optional[str] = None) -> SummaryData:
     """LLM 호출 실패 시 분석 결과를 바탕으로 규칙 기반 요약을 생성합니다."""
     return SummaryData(
         file_id=file_id,
         summary_result=SummaryResult(
+            error_message=error_message,
             document_overview=[
                 f"본 문서는 '{analysis_data.document_subject}'에 관해 기술된 내용입니다.",
                 f"원문 텍스트 내 주요 일시({', '.join(analysis_data.key_keywords.schedules)}) 및 수치 정보가 포함되어 있습니다.",
@@ -311,13 +366,15 @@ def run_document_validation(
     prompt = _build_validation_prompt(raw_text, analysis_data, summary_data)
     system_msg = "You are a strict, impartial AI Validation Agent. Do not invent new facts. Respond strictly in valid JSON."
 
-    parsed = _call_llm_api(prompt, system_msg, temperature=0.0)
+    parsed, ai_error = _call_llm_api(prompt, system_msg, temperature=0.0)
     if parsed:
         result = _parse_validation_response(file_id, parsed)
         if result:
             return result
 
-    return _validation_fallback(file_id, analysis_data)
+        ai_error = "AI 검증 응답의 JSON 구조가 올바르지 않습니다."
+
+    return _validation_fallback(file_id, analysis_data, ai_error)
 
 
 def _build_validation_prompt(
@@ -386,7 +443,7 @@ def _parse_validation_response(file_id: str, data: dict) -> ValidationData | Non
         return None
 
 
-def _validation_fallback(file_id: str, analysis_data: AnalysisData) -> ValidationData:
+def _validation_fallback(file_id: str, analysis_data: AnalysisData, error_message: Optional[str] = None) -> ValidationData:
     """LLM 호출 실패 시 규칙 기반으로 검증 결과를 생성합니다."""
     schedules = analysis_data.key_keywords.schedules
     metrics = analysis_data.key_keywords.metrics
@@ -394,7 +451,8 @@ def _validation_fallback(file_id: str, analysis_data: AnalysisData) -> Validatio
     return ValidationData(
         file_id=file_id,
         validation_result=ValidationResult(
-            is_passed=True,
+            error_message=error_message,
+            is_passed=not bool(error_message),
             status_badge="확인 필요",
             issue_list=[
                 ValidationIssueItem(
@@ -448,6 +506,36 @@ def recommend_folder(
         [{"folder_path": str, "score": float, "exists": bool}, ...]
     """
     # 키워드 전처리: 빈 항목 제거, 소문자화
+    candidates = []
+    seen = set()
+    for folder in existing_folders:
+        normalized = folder.replace("\\", "/").rstrip("/")
+        if normalized.startswith("output") and normalized not in seen:
+            candidates.append(normalized)
+            seen.add(normalized)
+    default_root = default_root.replace("\\", "/").rstrip("/")
+    if not candidates:
+        candidates = [default_root]
+
+    prompt = f"""Choose the best archive folder for a document.
+Available folders (choose only from this list): {json.dumps(candidates, ensure_ascii=False)}
+Document keywords: {json.dumps([kw for kw in keywords if kw.strip()], ensure_ascii=False)}
+Return only JSON: {{\"recommendations\": [{{\"folder_path\": \"exact candidate\", \"score\": 0.0}}]}}"""
+    parsed, _ = _call_llm_api(prompt, "You recommend document archive folders. Use only supplied candidates.", temperature=0.0)
+    if parsed and isinstance(parsed.get("recommendations"), list):
+        allowed = set(candidates)
+        ai_items = []
+        for item in parsed["recommendations"]:
+            if not isinstance(item, dict) or item.get("folder_path") not in allowed:
+                continue
+            try:
+                score = max(0.0, min(1.0, float(item.get("score", 0.0))))
+            except (TypeError, ValueError):
+                score = 0.0
+            ai_items.append({"folder_path": item["folder_path"], "score": round(score, 4), "exists": True})
+        if ai_items:
+            return ai_items[:3]
+
     tokens = {kw.strip().lower() for kw in keywords if kw.strip()}
 
     def _score(folder_path: str) -> float:
@@ -459,7 +547,7 @@ def recommend_folder(
 
     scored: list[dict] = []
 
-    for folder in existing_folders:
+    for folder in candidates:
         scored.append({
             "folder_path": folder,
             "score": _score(folder),
@@ -475,5 +563,5 @@ def recommend_folder(
         })
 
     # 점수 내림차순 정렬 후 상위 3개
-    scored.sort(key=lambda x: x["score"], reverse=True)
+    scored.sort(key=lambda x: (-x["score"], x["folder_path"] != default_root, -x["folder_path"].count("/"), x["folder_path"]))
     return scored[:3]
