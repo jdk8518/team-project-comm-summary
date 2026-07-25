@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # AI 문서 분석 시스템 기능 분해표 (Gharam)
 
 본 문서는 `./docs/requirements-Gharam.md` 요구사항 정의서를 바탕으로 `vibe-frame-kit`의 `function-breakdown` 표준 템플릿 서식에 맞추어 AI 문서 분석 시스템의 세부 기능을 단위별로 분해하고 명세한 문서입니다.
@@ -290,3 +291,241 @@
   ```
 
 ---
+=======
+# AI 기반 문서 분석 및 요약 시스템 기능 분해 명세서 (Function Breakdown)
+
+본 문서는 `vibe-frame-kit`의 **Function Breakdown Skill & Template** 기준을 엄격히 적용하여 `./docs/requirements-Gharam.md` 요구사항 정의서를 실행 가능한 세부 기능 단위로 분해하고, 입력/출력 데이터, 처리 로직, AI Agent 역할, API 엔드포인트 및 구현 순서를 정돈한 표준 설계 명세서입니다.
+
+---
+
+## 1. 프로젝트 개요 및 기능 분류 체계
+
+### 1.1. 시스템 목적
+문서(PDF, DOCX, TXT, HWP, HWPX, PPTX)를 입력받아 텍스트 파싱, AI 기반 핵심 분석(주제, 목적, 구조, 키워드, 검증후보), 과장 없는 3단 핵심 요약, 검증 신뢰도 점수(0~100점) 산출, 통합 대시보드 화면 출력, 규칙 기반 파일 아카이빙 및 DB 요약 검색/1-Click 다운로드를 자동화함.
+
+### 1.2. 대분류 파이프라인 구조
+```text
+[FEAT-01] 문서 입력 및 3단계 유효성 검증
+   ↓ (document_id, file Payload)
+[FEAT-02] 6종 포맷 텍스트 추출 및 정제 (Text Normalization)
+   ↓ (extracted_content JSON)
+[FEAT-03] AI 기반 문서 8대 핵심 구조 분석 (DocumentAnalysisAgent)
+   ↓ (analysis_result JSON)
+[FEAT-04] AI 핵심 내용 3단 요약 생성 (DocumentSummarizerAgent)
+   ↓ (summary_report JSON)
+[FEAT-05] AI 문서 검증 & 신뢰도 점수 산출 (DocumentValidationAgent)
+   ↓ (validation_result JSON)
+[FEAT-06] 분석 결과 통합 대시보드 화면 출력 (One-Page Integrated View)
+   ↓ (archiving_info & DB Record)
+[FEAT-07] DB 요약 다각도 검색 및 원본 파일 1-Click 다운로드
+```
+
+---
+
+## 2. FEAT-01: 문서 입력 및 유효성 검증 기능 분해
+
+### 2.1. 기능 개요
+지원 포맷(PDF, DOCX, TXT, HWP, HWPX, PPTX) 단일 문서 1건을 안전하게 수신하여 파일 메타정보 표시, 3단계(형식·크기·내용) 검증을 수행하고 `document_id`를 발급하여 텍스트 추출 파이프라인으로 전달함.
+
+### 2.2. 세부 기능 분해 표
+
+| 구분 | 세부 기능명 | 기능 설명 | 입력 데이터 | 출력 데이터 | 우선순위 / 비고 |
+|---|---|---|---|---|---|
+| **화면 (UI)** | 파일 선택 및 Dropzone UI | 탐색기 선택 또는 드래그 앤 드롭으로 단일 문서 선택 | 문서 파일 (File) | 선택된 파일 객체 | High (MVP) |
+| **화면 (UI)** | 파일 메타정보 렌더링 | 선택 파일의 파일명, 포맷 확장자, 용량(KB/MB) 표시 | 파일 객체 (File) | 메타정보 UI 렌더링 | High (MVP) |
+| **화면 (UI)** | 3단계 검증 상태 표시 | 검증 진행 및 통과/에러 메시지 알림 토스트 출력 | 검증 결과 객체 | 검증 알림 UI | High (MVP) |
+| **API** | 문서 업로드 API | 단일 파일 수신, 유효성 검증 및 식별자 발급 | `multipart/form-data` | `200 OK` (Payload) / `4xx Error` | High (MVP) |
+| **처리 (Logic)** | 1차: 파일 형식 검증 | 확장자 및 Magic Bytes 기반 미지원 포맷 차단 | 업로드 파일 | 검증 통과 여부 (Bool) | High (MVP) |
+| **처리 (Logic)** | 2차: 파일 크기 검증 | 단일 파일 용량이 50MB 이하인지 확인 | 파일 크기 (bytes) | 검증 통과 여부 (Bool) | High (MVP) |
+| **처리 (Logic)** | 3차: 문서 내용 검증 | 파싱 전 파일 손상, 암호화 및 빈 문서(0자) 감지 | 파일 스트림 / 파서 | 검증 통과 여부 (Bool) | High (MVP) |
+| **오류 처리** | 미지원/용량초과 예외 | 50MB 초과, 미지원 확장자, 빈 문서 입력 시 거부 | 에러 조건 발생 | `400/413/422 Error` | High (MVP) |
+
+### 2.3. API Endpoint 명세
+- `POST /api/v1/documents/upload`
+  - **Request**: `file` (binary), `document_type_hint` (optional)
+  - **Response (200 OK)**:
+    ```json
+    {
+      "success": true,
+      "data": {
+        "document_id": "doc_20260725_001",
+        "filename": "2026_부서업무보고.pdf",
+        "file_extension": "pdf",
+        "file_size_bytes": 1048576,
+        "validation_status": "PASSED"
+      }
+    }
+    ```
+
+---
+
+## 3. FEAT-02: 문서 텍스트 추출 및 정제 기능 분해
+
+### 3.1. 기능 개요
+검증 통과된 문서 ID와 스트림을 전달받아 6종 포맷별 전용 파서(PyMuPDF, `python-docx`, `python-hwpx`, `python-pptx` 등)를 통해 Raw 텍스트를 파싱하고 공백 정제(Normalization)를 거쳐 표준 JSON 구조로 변환함.
+
+### 3.2. 세부 기능 분해 표
+
+| 구분 | 세부 기능명 | 기능 설명 | 입력 데이터 | 출력 데이터 | 우선순위 / 비고 |
+|---|---|---|---|---|---|
+| **처리 (Logic)** | ExtractorFactory 팩토리 | 확장자에 따른 전용 텍스트 파서 객체 동적 생성 | 파일 확장자 | Parser Instance | High (MVP) |
+| **처리 (Logic)** | 6종 포맷 텍스트 추출 | PDF, DOCX, TXT, HWP/HWPX, PPTX 텍스트 파싱 | 파일 스트림 | Raw Text & Page Info | High (MVP) |
+| **처리 (Logic)** | Text Normalizer | 불필요 공백 정제, 3개 이상 줄바꿈(`\n\n\n+`) 축소 | Raw Text | Cleaned Text | High (MVP) |
+| **처리 (Logic)** | 기본 구조 태깅 | Heading, Paragraph, List 단위 섹션 배열 구성 | Cleaned Text | Section Array | High (MVP) |
+| **처리 (Logic)** | 텍스트 품질 검증 | 추출 텍스트 20자 미만 또는 스캔본 이미지 감지 | Cleaned Text | Is Analyzable (Bool) | High (MVP) |
+| **오류 처리** | 이미지전용/손상 예외 | 스캔 이미지 PDF/HWP 또는 손상 파일 시 알림 | 파싱 에러/0자 | `IMAGE_ONLY_DOCUMENT` | High (MVP) |
+
+### 3.3. API Endpoint 명세
+- `POST /api/v1/documents/extract`
+  - **Response (200 OK)**: `extracted_content` (full_cleaned_text, sections, metadata) 반환.
+
+---
+
+## 4. FEAT-03: AI 기반 문서 8대 핵심 구조 분석 기능 분해
+
+### 4.1. 기능 개요
+정제 텍스트 JSON을 입력받아 `DocumentAnalysisAgent`가 원문 기반 8대 핵심 항목(문서 주체, 목적, 핵심 구조, 핵심 문장, 주요 키워드 5종, 검증 후보, 분석 상태, 근거 정보)을 분석하고 근거 인덱스를 매핑함.
+
+### 4.2. 세부 기능 분해 표
+
+| 구분 | 세부 기능명 | 기능 설명 | 입력 데이터 | 출력 데이터 | 우선순위 / 비고 |
+|---|---|---|---|---|---|
+| **AI Agent** | 1. 문서 주체 추론 | 문서 전체 대표 중심 주제(`document_subject`) 추론 | `full_cleaned_text` | `document_subject` | High (MVP) |
+| **AI Agent** | 2. 문서 목적 분류 | 작성 의도(`document_purpose`: 제안/결정/전달) 분류 | `full_cleaned_text` | `document_purpose` | High (MVP) |
+| **AI Agent** | 3. 핵심 구조 파싱 | 배경, 주요 내용, 결론/요구사항 3단 구조 추출 | `sections` 배열 | `core_structure` | High (MVP) |
+| **AI Agent** | 4. 핵심 문장 추출 | 원문에서 대표 핵심 문장 3~5개 직접 선택 | `full_cleaned_text` | `key_sentences` 리스트 | High (MVP) |
+| **AI Agent** | 5. 주요 키워드 추출 | 인물, 기관, 일정, 수치, 개념 5대 범주 키워드 파싱 | `full_cleaned_text` | `key_keywords` 5종 | High (MVP) |
+| **AI Agent** | 6. 검증 후보 식별 | 모호한 표현, 특이 조건, 정밀 수치, 상충 후보 스크리닝 | `full_cleaned_text` | `verification_candidates` | High (MVP) |
+| **처리 (Logic)**| 7. 분석 상태 산출 | 8대 필드 및 Grounding 점수 기반 `SUCCESS/WARNING` 판정 | Agent Output | `analysis_status` | High (MVP) |
+| **처리 (Logic)**| 8. 근거 정보 매핑 | 추출 항목별 원문 구절(`evidence_text`) 1:1 매핑 | 분석 결과 항목 | `grounding_evidences` | High (MVP) |
+| **오류 처리** | Grounding 실패 재시도 | 환각 감지 또는 Citation 미존재 시 최대 3회 Retry | Grounding Score < 80 | Retry Prompt / Fallback | High (MVP) |
+
+### 4.3. API Endpoint 명세
+- `POST /api/v1/documents/analyze` -> 재정의된 8대 분석 결과 JSON 반환.
+
+---
+
+## 5. FEAT-04: AI 핵심 내용 3단 요약 생성 기능 분해
+
+### 5.1. 기능 개요
+원문과 분석 결과를 수신하여 `DocumentSummarizerAgent`가 원문의 뉘앙스(제안/검토의 확정 표기 금지)를 100% 보존하며 개요(한 줄 요약+태그), 세부 구조 요약, 결론/향후계획의 3단 리포트를 생성함.
+
+### 5.2. 세부 기능 분해 표
+
+| 구분 | 세부 기능명 | 기능 설명 | 입력 데이터 | 출력 데이터 | 우선순위 / 비고 |
+|---|---|---|---|---|---|
+| **AI Agent** | Part 1. 개요 요약 생성 | 한 줄 요약(`one_line_summary`) 및 태그 5~7개 생성 | `full_cleaned_text` | `overview` 객체 | High (MVP) |
+| **AI Agent** | Part 2. 세부 요약 생성 | 배경/목적, 현황/내용, 결정/요구사항별 세부 요약 | `structured_context` | `contextual_summary` | High (MVP) |
+| **AI Agent** | Part 3. 결론 요약 생성 | 최종 결론, 제안 및 향후 추진 일정/액션아이템 요약 | `conclusion` | `conclusion_and_next_steps` | High (MVP) |
+| **처리 (Logic)** | 뉘앙스 왜곡 검증 | '검토 중' 표현이 '확정'으로 변곡되었는지 룰 기반 체크 | 요약 결과 JSON | Nuance Valid (Bool) | High (MVP) |
+| **오류 처리** | 요약 지연/실패 예외 | 30초 타임아웃 또는 API 에러 시 3회 재시도 처리 | 타임아웃/에러 | `504 Gateway Timeout` | High (MVP) |
+
+### 5.3. API Endpoint 명세
+- `POST /api/v1/documents/summarize` -> 3단 요약 JSON 반환.
+
+---
+
+## 6. FEAT-05: AI 문서 검증 & 신뢰도 점수 산출 기능 분해
+
+### 6.1. 기능 개요
+원문과 요약문을 교차 대조하여 NLI 함의, 수치 정확도, 근거 매핑률을 종합한 **검증 신뢰도 점수(`0~100점`)**를 산출하고, 80점 미만 경고 태그 및 사람이 눈으로 확인해야 할 **4대 필수 검토 리스트**를 생성함.
+
+### 6.2. 세부 기능 분해 표
+
+| 구분 | 세부 기능명 | 기능 설명 | 입력 데이터 | 출력 데이터 | 우선순위 / 비고 |
+|---|---|---|---|---|---|
+| **AI Processing**| NLI 문맥 일치성 검증 | 원문 대비 요약문 Entailment/Neutral/Contradiction 분류 | 원문 & 요약문 | NLI Score (0~100) | High (MVP) |
+| **처리 (Logic)** | 수치/기한 100% 대조 | 예산, 수량, 날짜 등 수치 표기 1:1 대조 및 불일치 감지 | 원문 & 요약문 수치 | Numerical Score | High (MVP) |
+| **처리 (Logic)** | 신뢰도 점수 엔진 | $(S_{NLI} \times 0.4) + (S_{Num} \times 0.35) + (S_{Cit} \times 0.25)$ 계산 | 3대 평가점수 | `confidence_score` | High (MVP) |
+| **처리 (Logic)** | 4대 인간 검토 리스트 | 메타데이터, 정밀수치, 특이조건, 경고항목 체크리스트 | 분석/요약 결과 | `human_review_items` | High (MVP) |
+| **오류 처리** | 검증 지연 예외 | NLI 엔진 지연 시 기본 80점 산출 및 수동확인 표출 | Validation Error | `VALIDATION_WARNING` | High (MVP) |
+
+### 6.3. API Endpoint 명세
+- `POST /api/v1/documents/validate` -> 신뢰도 점수 및 4대 인간 검토 체크리스트 JSON 반환.
+
+---
+
+## 7. FEAT-06: 분석 결과 통합 대시보드 화면 출력 기능 분해
+
+### 7.1. 기능 개요
+분석/요약/검증 결과를 사용자가 한 화면(One-Page Dashboard)에서 탐색할 수 있도록 메타데이터, 저장 예정 파일명/경로, 3단 요약, 신뢰도 배지, 대화형 체크박스 및 원본 다운로드 버튼을 렌더링함.
+
+### 7.2. 세부 기능 분해 표
+
+| 구분 | 세부 기능명 | 기능 설명 | 입력 데이터 | 출력 데이터 | 우선순위 / 비고 |
+|---|---|---|---|---|---|
+| **화면 (UI)** | 메타데이터 카드 UI | 문서 제목, 작성일, 시행일, 소속부서 카드 출력 | `metadata_header` | 메타데이터 UI | High (MVP) |
+| **화면 (UI)** | 파일 아카이빙 카드 UI | 규칙 적용 **변경 예정 파일명** 및 **저장 폴더 경로** 표시 | `archiving_info` | 아카이빙 정보 UI | High (MVP) |
+| **화면 (UI)** | 요약 & 신뢰도 UI | 한 줄 요약, 태그, 3단 요약 + 92.5점 신뢰도 배지 출력 | `summary_content` | 요약 대시보드 UI | High (MVP) |
+| **화면 (UI)** | 원문 근거 모달 UI | `[원문근거보기]` 클릭 시 원문 해당 단락 하이라이트 | `evidence_citations` | 근거 대조 모달 | High (MVP) |
+| **화면 (UI)** | 인간 검토 체크박스 | 4대 필수 검토 항목 사용자가 눈으로 직접 체크 | `human_review_items` | 대화형 체크박스 | High (MVP) |
+| **화면 (UI)** | 원본 다운로드 버튼 | `[📥 1-Click 원본 파일 다운로드]` 실행 액션 | `document_id` | 파일 다운로드 실행 | High (MVP) |
+
+### 7.3. API Endpoint 명세
+- `GET /api/v1/documents/{document_id}/report` -> 통합 대시보드 JSON 반환.
+
+---
+
+## 8. FEAT-07: DB 요약 검색 및 원본 파일 다운로드 기능 분해
+
+### 8.1. 기능 개요
+아카이빙된 요약 내역을 DB에서 키워드, 부서, 기간, 문서 유형별로 검색하고, 결과 목록에서 요약 미리보기 모달 및 원본 파일 1-Click 다운로드 스트림을 제공함.
+
+### 8.2. 세부 기능 분해 표
+
+| 구분 | 세부 기능명 | 기능 설명 | 입력 데이터 | 출력 데이터 | 우선순위 / 비고 |
+|---|---|---|---|---|---|
+| **화면 (UI)** | DB 검색 바 & 필터 | 키워드 검색어, 소속부서, 기간, 문서 유형 선택 UI | 검색 조건 | Query Params | High (MVP) |
+| **화면 (UI)** | 검색 결과 목록 리스트 | 검색된 문서 카드리스트, 요약 1줄, 신뢰도 점수 표시 | `search_results` | 목록 카드리스트 UI | High (MVP) |
+| **화면 (UI)** | 요약 미리보기 모달 | 검색 항목 클릭 시 분석/요약 팝업 렌더링 | `document_id` | 미리보기 모달 | High (MVP) |
+| **API** | DB 요약 검색 API | 조건별 Indexed DB Query 수행 및 페이징 응답 | Query Params | `200 OK` (Result List) | High (MVP) |
+| **API** | 원본 파일 다운로드 API | 지정된 문서의 원본 파일 바이너리 스트림 반환 | `document_id` | File Binary Stream | High (MVP) |
+| **오류 처리** | 검색결과없음 / 누락 | 검색 조건 미부합 또는 물리 파일 누락 시 알림 | 0건 / 파일 없음 | `200 Empty` / `404 Error` | High (MVP) |
+
+### 8.3. API Endpoint 명세
+- `GET /api/v1/documents/search?keyword=AI&department=AI개발팀&page=1&size=10`
+- `GET /api/v1/documents/{document_id}/download` (`Content-Disposition` 파일 다운로드)
+
+---
+
+## 9. 전체 파이프라인 데이터 계약 및 상태 전이 명세 (Pipeline State Contract)
+
+### 9.1. 문서 처리 상태 전이표 (State Transition)
+
+```text
+[UPLOADED] ──(Extract Success)──> [EXTRACTED] ──(Analyze Success)──> [ANALYZED]
+    │                                │                                │
+ (Error)                          (Error)                          (Error)
+    ▼                                ▼                                ▼
+[UPLOAD_FAILED]                 [EXTRACT_FAILED]                [ANALYSIS_FAILED]
+
+[ANALYZED] ──(Summarize Success)─> [SUMMARIZED] ──(Validate Success)─> [VALIDATED] ──(Save)──> [ARCHIVED]
+                                       │                                   │
+                                    (Error)                             (Error)
+                                       ▼                                   ▼
+                            [SUMMARIZE_FAILED]                  [VALIDATION_WARNING]
+```
+
+### 9.2. 파이프라인 차단 규칙 (Short-Circuiting Rules)
+1. 선행 단계 상태가 성공(`UPLOADED`, `EXTRACTED`, `ANALYZED`, `SUMMARIZED`)이 아닌 경우 후속 AI Agent 및 API 호출을 즉시 차단하고 에러 응답을 반환함.
+2. 예외 발생 시 파이프라인은 해당 `document_id` 세션을 에러 상태로 변경하고 이전 단계까지 생성된 텍스트 및 기본 메타데이터만 보존함.
+
+---
+
+## 10. 추천 구현 순서 (Implementation Order Plan)
+
+```text
+Phase 1 (기반 파이프라인 구축):
+  Step 1. FEAT-01 문서 입력 API & 3단계 유효성 검증 모듈 구현
+  Step 2. FEAT-02 6종 포맷(PyMuPDF, python-docx, python-hwpx, python-pptx) 파서 구현
+
+Phase 2 (AI Processing & Agent 구축):
+  Step 3. FEAT-03 DocumentAnalysisAgent 8대 핵심 구조 분석 모듈 구현
+  Step 4. FEAT-04 DocumentSummarizerAgent 3단 요약 생성 모듈 구현
+  Step 5. FEAT-05 DocumentValidationAgent 신뢰도 점수 및 4대 검토 리스트 엔진 구현
+
+Phase 3 (Dashboard & DB Search 구축):
+  Step 6. FEAT-06 통합 대시보드 화면 출력 API 및 프론트엔드 UI 연동
+  Step 7. FEAT-07 DB 요약 검색 API 및 1-Click 원본 파일 다운로드 스트림 구현
+```
+>>>>>>> 5e19089 (기능분해)
