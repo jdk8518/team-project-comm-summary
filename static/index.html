@@ -35,11 +35,12 @@
         radial-gradient(at 100% 100%, rgba(139, 92, 246, 0.15) 0px, transparent 50%);
       color: var(--text-main);
       min-height: 100vh;
-      padding: 2rem 1rem;
+      padding: 1.5rem 2rem;
     }
 
     .container {
-      max-width: 1100px;
+      width: 100%;
+      max-width: 100%;
       margin: 0 auto;
     }
 
@@ -417,6 +418,11 @@
   <div class="tab-content active" id="tabUpload">
     <!-- Upload Card -->
     <div class="card">
+      <div style="margin-bottom: 1.2rem; display: flex; align-items: center; gap: 0.6rem; max-width: 340px;">
+        <label for="uploadDepartmentInput" style="font-size: 0.88rem; color: var(--text-main); font-weight: 600; white-space: nowrap;">🏢 소속 부서:</label>
+        <input type="text" id="uploadDepartmentInput" class="form-input" value="디지털혁신팀" placeholder="예: 디지털혁신팀, AI개발팀" style="margin-top:0; padding: 0.45rem 0.75rem; font-size: 0.88rem;">
+      </div>
+
       <div class="dropzone" id="dropzone">
         <div class="dropzone-icon" style="font-size: 2.5rem;">📁</div>
         <p style="font-weight: 600; font-size: 1.05rem; margin-bottom: 0.4rem;">분석할 문서 파일(들) 또는 폴더를 드래그하거나 선택하세요</p>
@@ -476,6 +482,10 @@
             <button class="btn-action" style="width:auto; margin-top:0; padding:0.45rem 0.7rem; font-size:0.78rem;" onclick="loadUploadFolderRecommend()">추천경로</button>
           </div>
           <div id="uploadFolderRecommendList" style="margin-top:0.5rem;"></div>
+        </div>
+        <div style="margin-bottom: 1rem;">
+          <label style="font-size: 0.85rem; color: var(--text-sub);">소속 부서 (수정 가능)</label>
+          <input type="text" class="form-input" id="editDepartment" placeholder="예: 디지털혁신팀" style="margin-top:0.2rem;">
         </div>
         <div>
           <label style="font-size: 0.85rem; color: var(--text-sub);">추천 재지정 파일명</label>
@@ -560,15 +570,16 @@
               <th style="padding: 0.6rem 0.5rem; width: 40px; text-align: center;">
                 <input type="checkbox" id="selectAllWorkList" onclick="toggleSelectAllWorkList(this.checked)">
               </th>
-              <th style="padding: 0.6rem 0.5rem; width: 200px;">저장경로</th>
-              <th style="padding: 0.6rem 0.5rem; width: 180px;">파일명</th>
+              <th style="padding: 0.6rem 0.5rem; width: 180px;">저장경로</th>
+              <th style="padding: 0.6rem 0.5rem; width: 130px;">소속부서</th>
+              <th style="padding: 0.6rem 0.5rem; width: 160px;">파일명</th>
               <th style="padding: 0.6rem 0.5rem;">요약내용</th>
               <th style="padding: 0.6rem 0.5rem; width: 130px; text-align: center;">작업</th>
             </tr>
           </thead>
           <tbody id="workListTableBody">
             <tr>
-              <td colspan="5" style="text-align: center; color: var(--text-sub); padding: 1.8rem;">
+              <td colspan="6" style="text-align: center; color: var(--text-sub); padding: 1.8rem;">
                 등록된 미확인 다중파일 작업 문서가 없습니다.
               </td>
             </tr>
@@ -678,6 +689,11 @@
     </div>
 
     <div style="margin-bottom: 1.2rem;">
+      <label style="font-size: 0.85rem; color: var(--text-sub); display:block; margin-bottom:0.4rem;">🏢 소속 부서 (수정 가능)</label>
+      <input type="text" class="form-input" id="modalDepartment" placeholder="예: 디지털혁신팀" style="margin-top:0;">
+    </div>
+
+    <div style="margin-bottom: 1.2rem;">
       <label style="font-size: 0.85rem; color: var(--text-sub); display:block; margin-bottom:0.4rem;">📁 저장 경로 (수정 가능)</label>
       <div style="display:flex; gap:0.6rem; align-items:center;">
         <input type="text" class="form-input" id="modalFolderPath" placeholder="예: archive/디지털혁신팀" style="margin-top:0; flex:1;">
@@ -747,6 +763,28 @@
       : '';
   }
 
+  async function refreshDepartmentDropdown() {
+    const select = document.getElementById('deptSelect');
+    if (!select) return;
+    const currentVal = select.value;
+    try {
+      const res = await fetch('/api/v1/documents/departments');
+      const data = await res.json();
+      select.innerHTML = '<option value="">전체 부서</option>';
+      if (data.data && Array.isArray(data.data)) {
+        data.data.forEach(dept => {
+          const opt = document.createElement('option');
+          opt.value = dept;
+          opt.textContent = dept;
+          select.appendChild(opt);
+        });
+      }
+      select.value = currentVal;
+    } catch (err) {
+      console.error('Failed to load departments:', err);
+    }
+  }
+
   function switchTab(tabName) {
     document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
     document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
@@ -758,6 +796,7 @@
     } else {
       document.getElementById('tabSearchBtn').classList.add('active');
       document.getElementById('tabSearch').classList.add('active');
+      refreshDepartmentDropdown();
       refreshFolderTree();
       executeSearch();
     }
@@ -808,8 +847,10 @@
     document.getElementById('loadingState').style.display = 'block';
     btnAnalyze.disabled = true;
 
+    const dept = document.getElementById('uploadDepartmentInput').value.trim() || '디지털혁신팀';
     const formData = new FormData();
     formData.append('file', selectedFile);
+    formData.append('department', dept);
 
     try {
       const response = await fetch('/api/v1/documents/analyze', {
@@ -839,10 +880,12 @@
 
     const folderPath = normalizeArchivePath(document.getElementById('editFolder').value);
     const filename = document.getElementById('editFilename').value.trim();
+    const dept = document.getElementById('editDepartment').value.trim() || '디지털혁신팀';
     const overviewRaw = document.getElementById('editOverview').value;
     const overviewList = overviewRaw.split('\n').map(s => s.trim()).filter(s => s.length > 0);
     const editedResults = buildEditedResults(currentResultData, 'edit');
     editedResults.summary_data.document_overview = overviewList;
+    editedResults.department = dept;
 
     if (!folderPath || !filename) {
       alert('저장 폴더 경로와 파일명을 입력하십시오.');
@@ -857,6 +900,7 @@
           folder_path: folderPath,
           filename: filename,
           document_overview: overviewList,
+          department: dept,
           ...editedResults
         })
       });
@@ -867,6 +911,7 @@
         selectedFolderPath = folderPath.replace(/\\/g, '/').replace(/\/$/, '');
         highlightedFileId = currentFileId;
         expandFolderAncestors(selectedFolderPath);
+        await refreshDepartmentDropdown();
         switchTab('search');
         await refreshFolderTree();
         await executeSearch();
@@ -918,8 +963,10 @@
     setDomText('resUploadedAt', info.uploaded_at || '-');
 
     const arch = data.archiving_info || {};
-    setDomValue('editFolder', displayArchivePath(arch.recommended_folder || 'output/archive/디지털혁신팀/'));
+    const defaultDept = document.getElementById('uploadDepartmentInput').value.trim() || '디지털혁신팀';
+    setDomValue('editFolder', displayArchivePath(arch.recommended_folder || `output/archive/${defaultDept}/`));
     setDomValue('editFilename', arch.recommended_filename || info.original_filename);
+    setDomValue('editDepartment', data.department || defaultDept);
 
     const sData = data.summary_data || {};
     setDomValue('editOverview', (sData.document_overview || []).join('\n'));
@@ -1111,10 +1158,11 @@
     const wrapper = document.createElement('div');
     const row = document.createElement('button');
 
+    const folderName = normalizedPath.split('/').pop() || ARCHIVE_ROOT;
     wrapper.className = 'folder-tree-node';
     row.type = 'button';
     row.className = `folder-tree-row ${normalizeArchivePath(selectedFolderPath) === normalizedPath ? 'selected' : ''}`;
-    row.textContent = `${children.length > 0 ? (expandedFolderPaths.has(normalizedPath) ? '▾' : '▸') : '•'} ${isRoot ? '파일 저장 폴더' : normalizedPath.split('/').pop()}`;
+    row.textContent = `${children.length > 0 ? (expandedFolderPaths.has(normalizedPath) ? '▾' : '▸') : '•'} ${folderName}`;
     row.onclick = () => {
       selectedFolderPath = normalizedPath;
       if (children.length > 0) {
@@ -1173,10 +1221,11 @@
 
       const listDiv = document.getElementById('searchResultsList');
       const labelDiv = document.getElementById('selectedFolderLabel');
+      const rootFolderName = ARCHIVE_ROOT.split('/').pop() || ARCHIVE_ROOT;
       listDiv.innerHTML = '';
       labelDiv.textContent = selectedFolder
         ? `선택 폴더: ${displayArchivePath(selectedFolder)} 하위 전체`
-        : '선택 폴더: 파일 저장 폴더 전체';
+        : `선택 폴더: ${rootFolderName} 전체`;
 
       if (!data.data || data.data.length === 0) {
         listDiv.innerHTML = '<p style="text-align: center; color: var(--text-sub); padding: 2rem;">검색 조건에 해당되는 저장 문서가 없습니다.</p>';
@@ -1491,11 +1540,13 @@
       document.getElementById('modalPurpose').value = sData.document_purpose || '';
       document.getElementById('modalConclusion').value = sData.conclusion_or_core_message || '';
       setKeywordInputs('modal', (data.analysis_data || {}).key_keywords || {});
+      document.getElementById('modalDepartment').value = data.department || '디지털혁신팀';
       document.getElementById('modalFolderPath').value = displayArchivePath(archInfo.recommended_folder || '');
       document.getElementById('folderRecommendList').innerHTML = '';
 
       const detailDiv = document.getElementById('modalDetailContent');
       detailDiv.innerHTML = `
+        <p style="margin-bottom: 0.8rem;"><strong>소속 부서:</strong> <span style="color:#60a5fa;">${data.department || '-'}</span></p>
         <p style="margin-bottom: 0.8rem;"><strong>문서 목적:</strong> ${sData.document_purpose || '-'}</p>
         <p style="margin-bottom: 0.8rem;"><strong>핵심 메시지:</strong> <span style="color:#a78bfa;">${sData.conclusion_or_core_message || '-'}</span></p>
       `;
@@ -1518,8 +1569,10 @@
 
     const rawOverview = document.getElementById('modalOverviewEdit').value;
     const overviewList = rawOverview.split('\n').map(s => s.trim()).filter(s => s.length > 0);
+    const dept = document.getElementById('modalDepartment').value.trim();
     const editedResults = buildEditedResults(modalResultData, 'modal');
     editedResults.summary_data.document_overview = overviewList;
+    if (dept) editedResults.department = dept;
 
     try {
       const res = await fetch(`/api/v1/documents/${activeModalFileId}/results`, {
@@ -1530,8 +1583,9 @@
 
       const data = await res.json();
       if (res.ok && data.success) {
-        alert('요약 내용이 DB에 성공적으로 수정되었습니다.');
+        alert('요약 내용 및 소속 부서가 DB에 성공적으로 수정되었습니다.');
         closeModal();
+        await refreshDepartmentDropdown();
         executeSearch();
       } else {
         alert(data.detail || '수정에 실패했습니다.');
@@ -1707,6 +1761,7 @@
 
     const loadingH3 = document.querySelector('#loadingState h3');
     const loadingP = document.querySelector('#loadingState p');
+    const dept = document.getElementById('uploadDepartmentInput').value.trim() || '디지털혁신팀';
 
     let successCount = 0;
     let failCount = 0;
@@ -1718,6 +1773,7 @@
 
       const formData = new FormData();
       formData.append('file', file);
+      formData.append('department', dept);
 
       try {
         const response = await fetch('/api/v1/documents/analyze-auto', {
@@ -1739,6 +1795,7 @@
     document.getElementById('loadingState').style.display = 'none';
     showToast(`총 ${successCount}개 문서가 분석되어 다중파일 작업리스트에 추가되었습니다.${failCount > 0 ? ` (${failCount}개 실패)` : ''}`);
     await loadUnconfirmedWorkList();
+    await refreshDepartmentDropdown();
   }
 
   async function loadUnconfirmedWorkList() {
@@ -1752,7 +1809,7 @@
       if (!data.data || data.data.length === 0) {
         tbody.innerHTML = `
           <tr>
-            <td colspan="5" style="text-align: center; color: var(--text-sub); padding: 1.8rem;">
+            <td colspan="6" style="text-align: center; color: var(--text-sub); padding: 1.8rem;">
               등록된 미확인 다중파일 작업 문서가 없습니다.
             </td>
           </tr>
@@ -1770,6 +1827,9 @@
           </td>
           <td style="padding: 0.6rem 0.5rem;">
             <input type="text" class="form-input" id="workFolder_${item.file_id}" value="${item.saved_folder}" style="margin:0; font-size:0.83rem; padding:0.4rem 0.6rem;">
+          </td>
+          <td style="padding: 0.6rem 0.5rem;">
+            <input type="text" class="form-input" id="workDept_${item.file_id}" value="${item.department || '디지털혁신팀'}" style="margin:0; font-size:0.83rem; padding:0.4rem 0.6rem;">
           </td>
           <td style="padding: 0.6rem 0.5rem;">
             <span style="font-weight:500; color:#60a5fa; word-break:break-all;">📄 ${item.renamed_filename || item.original_filename}</span>
@@ -1798,8 +1858,10 @@
   async function confirmSingleWorkItem(fileId) {
     const folderInput = document.getElementById(`workFolder_${fileId}`);
     const summaryInput = document.getElementById(`workSummary_${fileId}`);
+    const deptInput = document.getElementById(`workDept_${fileId}`);
     const folder = folderInput ? folderInput.value.trim() : '';
     const summary = summaryInput ? summaryInput.value.trim() : '';
+    const dept = deptInput ? deptInput.value.trim() : '';
 
     try {
       const res = await fetch(`/api/v1/documents/${fileId}/confirm`, {
@@ -1807,7 +1869,8 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           folder_path: folder,
-          document_overview: [summary]
+          document_overview: [summary],
+          department: dept
         })
       });
       const data = await res.json();
@@ -1816,6 +1879,7 @@
         const row = document.getElementById(`workRow_${fileId}`);
         if (row) row.remove();
         await loadUnconfirmedWorkList();
+        await refreshDepartmentDropdown();
       } else {
         alert('저장 실패: ' + (data.detail || data.message || '오류 발생'));
       }
@@ -1834,6 +1898,7 @@
         const row = document.getElementById(`workRow_${fileId}`);
         if (row) row.remove();
         await loadUnconfirmedWorkList();
+        await refreshDepartmentDropdown();
       } else {
         alert('삭제 실패: ' + (data.detail || data.message || '오류 발생'));
       }
@@ -1853,10 +1918,12 @@
       const fileId = cb.value;
       const folderInput = document.getElementById(`workFolder_${fileId}`);
       const summaryInput = document.getElementById(`workSummary_${fileId}`);
+      const deptInput = document.getElementById(`workDept_${fileId}`);
       return {
         file_id: fileId,
         folder_path: folderInput ? folderInput.value.trim() : '',
-        document_overview: summaryInput ? [summaryInput.value.trim()] : []
+        document_overview: summaryInput ? [summaryInput.value.trim()] : [],
+        department: deptInput ? deptInput.value.trim() : ''
       };
     });
 
@@ -1870,6 +1937,7 @@
       if (res.ok && data.success) {
         showToast(`${data.success_count}개 문서가 성공적으로 일괄 저장되었습니다.`);
         await loadUnconfirmedWorkList();
+        await refreshDepartmentDropdown();
       } else {
         alert('일괄 저장 실패: ' + (data.detail || data.message));
       }
@@ -1899,6 +1967,7 @@
       if (res.ok && data.success) {
         showToast(`${data.success_count}개 문서가 성공적으로 일괄 삭제되었습니다.`);
         await loadUnconfirmedWorkList();
+        await refreshDepartmentDropdown();
       } else {
         alert('일괄 삭제 실패: ' + (data.detail || data.message));
       }
@@ -1907,9 +1976,10 @@
     }
   }
 
-  // Load unconfirmed work list on startup
+  // Load unconfirmed work list & department dropdown on startup
   document.addEventListener('DOMContentLoaded', () => {
     loadUnconfirmedWorkList();
+    refreshDepartmentDropdown();
   });
 </script>
 

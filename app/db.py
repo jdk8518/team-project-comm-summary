@@ -8,7 +8,11 @@ from app.schemas import (
     SummaryData, ValidationData, AnalysisData, SummaryResult, ValidationResult
 )
 
-ARCHIVE_ROOT = "output"
+from dotenv import load_dotenv
+load_dotenv()
+
+raw_archive_root = (os.getenv("ARCHIVE_ROOT") or os.getenv("FILE_STORAGE_ROOT") or "output").strip().replace("\\", "/").strip("/")
+ARCHIVE_ROOT = raw_archive_root or "output"
 DB_PATH = os.path.join(ARCHIVE_ROOT, "documents.db")
 
 # In-memory document binary buffer for uploaded/archived raw bytes
@@ -330,11 +334,12 @@ def write_summary_markdown(file_id: str, archived_path: str) -> str:
     return markdown_path
 
 
-def store_uploaded_document(file_id: str, original_filename: str, format_str: str, file_bytes: bytes, file_path: str):
+def store_uploaded_document(file_id: str, original_filename: str, format_str: str, file_bytes: bytes, file_path: str, department: str = "디지털혁신팀"):
     """Store raw file bytes and initial metadata in memory and SQLite DB."""
     document_files[file_id] = file_bytes
 
-    rec_folder = "output/archive/디지털혁신팀/"
+    dept_str = (department or "").strip() or "디지털혁신팀"
+    rec_folder = f"output/archive/{dept_str}/"
     stem, extension = os.path.splitext(os.path.basename(original_filename))
     rec_filename = f"{datetime.now().strftime('%Y-%m-%d')}_{stem}{extension}"
 
@@ -352,7 +357,7 @@ def store_uploaded_document(file_id: str, original_filename: str, format_str: st
         "uploaded_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "status": "UPLOADED",
         "file_path": file_path,
-        "department": "디지털혁신팀",
+        "department": dept_str,
         "raw_text": None,
         "structured_content": None,
         "analysis_data": None,
@@ -364,6 +369,28 @@ def store_uploaded_document(file_id: str, original_filename: str, format_str: st
     }
 
     document_db[file_id] = doc
+
+
+def get_all_departments() -> List[str]:
+    """Return distinct non-empty departments ordered ascending."""
+    departments = set()
+    for doc in document_db.values():
+        dept = doc.get("department")
+        if dept and str(dept).strip():
+            departments.add(str(dept).strip())
+
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT DISTINCT department FROM documents WHERE department IS NOT NULL AND TRIM(department) != '' ORDER BY department ASC")
+            rows = cursor.fetchall()
+            for r in rows:
+                if r["department"]:
+                    departments.add(r["department"].strip())
+    except Exception:
+        pass
+
+    return sorted(list(departments))
 
 
 def get_unconfirmed_documents() -> List[Dict[str, Any]]:
@@ -381,7 +408,8 @@ def get_unconfirmed_documents() -> List[Dict[str, Any]]:
                 "file_id": doc_id,
                 "original_filename": doc.get("original_filename", "file.pdf"),
                 "renamed_filename": doc.get("saved_filename") or doc.get("recommended_filename") or doc.get("original_filename") or "document",
-                "saved_folder": doc.get("saved_folder") or doc.get("recommended_folder", "output/archive/디지털혁신팀/"),
+                "saved_folder": doc.get("saved_folder") or doc.get("recommended_folder", f"output/archive/{doc.get('department', '디지털혁신팀')}/"),
+                "department": doc.get("department", "디지털혁신팀"),
                 "one_line_summary": overview_text or "요약문이 생성되어 있습니다.",
                 "user_confirmed": False,
                 "uploaded_at": doc.get("uploaded_at", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
@@ -389,12 +417,15 @@ def get_unconfirmed_documents() -> List[Dict[str, Any]]:
     return results
 
 
-def confirm_document(file_id: str, folder_path: str, document_overview: List[str]) -> Tuple[bool, str]:
-    """Update document folder path & overview, set user_confirmed = True."""
+def confirm_document(file_id: str, folder_path: str, document_overview: List[str], department: Optional[str] = None) -> Tuple[bool, str]:
+    """Update document folder path, overview & department, set user_confirmed = True."""
     if file_id not in document_db:
         return False, "문서를 찾을 수 없습니다."
 
     doc = document_db[file_id]
+
+    if department and department.strip():
+        doc["department"] = department.strip()
 
     # Update summary overview
     if "summary_data" in doc and doc["summary_data"]:
@@ -424,7 +455,8 @@ def batch_confirm_documents(items: List[Dict[str, Any]]) -> Tuple[int, List[str]
         f_id = item.get("file_id")
         folder = item.get("folder_path", "")
         overview = item.get("document_overview", [])
-        ok, _ = confirm_document(f_id, folder, overview)
+        dept = item.get("department")
+        ok, _ = confirm_document(f_id, folder, overview, department=dept)
         if ok:
             success_count += 1
         else:
@@ -443,7 +475,6 @@ def batch_delete_documents(file_ids: List[str]) -> Tuple[int, List[str]]:
         else:
             failed_ids.append(f_id)
     return success_count, failed_ids
-    save_doc_to_sqlite(doc)
 
 
 def update_document_recommendation(file_id: str, folder_path: str) -> bool:
@@ -489,11 +520,13 @@ def update_document_validation(file_id: str, validation_data: Any):
         save_doc_to_sqlite(doc)
 
 
-def update_document_results(file_id: str, analysis_data: Any, summary_data: Any, validation_data: Any) -> bool:
-    """Update AI analysis/summary/validation results in SQLite DB and regenerate Markdown."""
+def update_document_results(file_id: str, analysis_data: Any, summary_data: Any, validation_data: Any, department: Optional[str] = None) -> bool:
+    """Update AI analysis/summary/validation results and department in SQLite DB and regenerate Markdown."""
     if file_id not in document_db:
         return False
     doc = document_db[file_id]
+    if department and department.strip():
+        doc["department"] = department.strip()
     doc["analysis_data"] = analysis_data
     doc["summary_data"] = SummaryData(file_id=file_id, summary_result=summary_data)
     doc["validation_data"] = ValidationData(file_id=file_id, validation_result=validation_data)
@@ -506,7 +539,7 @@ def update_document_results(file_id: str, analysis_data: Any, summary_data: Any,
     return True
 
 
-def archive_and_save_document(file_id: str, folder_path: str, filename: str, document_overview: List[str], analysis_data: Any = None, summary_data: Any = None, verification_data: Any = None) -> Tuple[bool, str]:
+def archive_and_save_document(file_id: str, folder_path: str, filename: str, document_overview: List[str], analysis_data: Any = None, summary_data: Any = None, verification_data: Any = None, department: Optional[str] = None) -> Tuple[bool, str]:
     """Save original file to specified folder_path/filename and insert/update DB record in SQLite."""
     if file_id not in document_db:
         return False, "문서를 찾을 수 없습니다."
@@ -523,6 +556,8 @@ def archive_and_save_document(file_id: str, folder_path: str, filename: str, doc
 
         # Update DB record
         doc = document_db[file_id]
+        if department and department.strip():
+            doc["department"] = department.strip()
         doc["status"] = "SAVED"
         doc["archived_path"] = archived_full_path
         doc["saved_folder"] = normalized_folder_path

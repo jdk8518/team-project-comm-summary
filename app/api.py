@@ -1,7 +1,7 @@
 import os
 import uuid
 from typing import Optional, List
-from fastapi import APIRouter, UploadFile, File, HTTPException, Query
+from fastapi import APIRouter, UploadFile, File, HTTPException, Query, Form
 from fastapi.responses import PlainTextResponse, StreamingResponse
 import io
 
@@ -16,6 +16,7 @@ from app.schemas import (
     FolderRecommendItem, FolderRecommendResponse,
     UnconfirmedDocumentItem, UnconfirmedListResponse,
     ConfirmDocumentRequest, BatchConfirmItem, BatchConfirmRequest, BatchDeleteRequest,
+    DepartmentListResponse,
 )
 from app.parsers import validate_file_metadata, extract_text_from_file, structure_text, DocumentParsingError
 from app.services import run_document_analysis, run_document_summarization, run_document_validation, recommend_folder
@@ -31,7 +32,10 @@ async def database_health():
     return {"success": status.get("connected", False), "data": status}
 
 @router.post("/analyze", response_model=IntegratedResultResponse, summary="문서 분석 통합 API (대시보드 UI 연동)")
-async def analyze_document(file: UploadFile = File(...)):
+async def analyze_document(
+    file: UploadFile = File(...),
+    department: Optional[str] = Form("디지털혁신팀")
+):
     """
     단일 문서(PDF, DOCX, TXT, HWP, HWPX, PPTX)를 수신하여
     텍스트 파싱 -> AI 구조 분석 -> AI 팩트 요약 -> AI 검증
@@ -58,7 +62,8 @@ async def analyze_document(file: UploadFile = File(...)):
         original_filename=filename,
         format_str=format_str,
         file_bytes=file_bytes,
-        file_path=temp_path
+        file_path=temp_path,
+        department=department or "디지털혁신팀"
     )
 
     # 3. 텍스트 파싱
@@ -128,17 +133,26 @@ async def analyze_document(file: UploadFile = File(...)):
 
     return IntegratedResultResponse(success=True, data=integrated_data)
 
+@router.get("/departments", response_model=DepartmentListResponse, summary="등록된 모든 소속 부서 목록 조회 API (오름차순)")
+async def get_departments():
+    depts = db.get_all_departments()
+    return DepartmentListResponse(success=True, total_count=len(depts), data=depts)
+
 @router.post("/analyze-auto", response_model=IntegratedResultResponse, summary="다중 파일 자동 분석 및 보관 API (user_confirmed = False)")
-async def analyze_document_auto(file: UploadFile = File(...)):
+async def analyze_document_auto(
+    file: UploadFile = File(...),
+    department: Optional[str] = Form("디지털혁신팀")
+):
     """
     다중 파일 업로드 시 개별 문서를 수신하여
     분석/요약/검증을 완료한 후 사용자 개입 없이 바로 DB와 원본/Markdown 파일로 보관(user_confirmed=False)합니다.
     """
-    res = await analyze_document(file)
+    res = await analyze_document(file, department=department)
     file_id = res.data.file_id
     doc_record = db.get_document_by_id(file_id)
 
-    rec_folder = doc_record.get("recommended_folder", "output/archive/디지털혁신팀/")
+    dept_str = (department or "").strip() or "디지털혁신팀"
+    rec_folder = doc_record.get("recommended_folder", f"output/archive/{dept_str}/")
     rec_filename = doc_record.get("recommended_filename", doc_record.get("original_filename", "doc.pdf"))
     overview = getattr(res.data.summary_data, "document_overview", ["자동 분석 요약"])
 
@@ -147,8 +161,10 @@ async def analyze_document_auto(file: UploadFile = File(...)):
         folder_path=rec_folder,
         filename=rec_filename,
         document_overview=overview,
+        department=dept_str,
     )
     doc_record["user_confirmed"] = False
+    doc_record["department"] = dept_str
     db.save_doc_to_sqlite(doc_record)
 
     res.data.status = "SAVED"
@@ -162,7 +178,7 @@ async def get_unconfirmed_documents():
 
 @router.put("/{file_id}/confirm", summary="단일 문서 확정 저장 API")
 async def confirm_single_document(file_id: str, req: ConfirmDocumentRequest):
-    success, msg = db.confirm_document(file_id, req.folder_path, req.document_overview)
+    success, msg = db.confirm_document(file_id, req.folder_path, req.document_overview, department=req.department)
     if not success:
         raise HTTPException(status_code=400, detail=msg)
     return {"success": True, "message": msg, "file_id": file_id}
@@ -202,6 +218,7 @@ async def save_document(file_id: str, req: SaveDocumentRequest):
         analysis_data=req.analysis_data,
         summary_data=req.summary_data,
         verification_data=req.verification_data,
+        department=req.department,
     )
 
     if not success:
@@ -292,6 +309,7 @@ async def update_document_results(file_id: str, req: DocumentResultsUpdate):
         req.analysis_data,
         req.summary_data,
         req.verification_data,
+        department=req.department,
     )
     if not success:
         raise HTTPException(status_code=404, detail="문서 분석 결과를 업데이트할 수 없습니다.")

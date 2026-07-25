@@ -478,3 +478,46 @@ def test_unconfirmed_work_list_and_batch_operations():
     # Cleanup file_id1 & file_id2
     client.delete(f"/api/v1/documents/{file_id1}")
     client.delete(f"/api/v1/documents/{file_id2}")
+
+
+def test_departments_endpoint_and_custom_department_saving():
+    res1 = client.post(
+        "/api/v1/documents/analyze",
+        data={"department": "기획조정실"},
+        files={"file": ("dept-test1.txt", FULL_DOC_CONTENT, "text/plain")},
+    )
+    assert res1.status_code == 200
+    file_id1 = res1.json()["data"]["file_id"]
+
+    res2 = client.post(
+        "/api/v1/documents/analyze",
+        data={"department": "AI개발팀"},
+        files={"file": ("dept-test2.txt", FULL_DOC_CONTENT, "text/plain")},
+    )
+    assert res2.status_code == 200
+    file_id2 = res2.json()["data"]["file_id"]
+
+    dept_res = client.get("/api/v1/documents/departments")
+    assert dept_res.status_code == 200
+    depts = dept_res.json()["data"]
+    assert "기획조정실" in depts
+    assert "AI개발팀" in depts
+    assert depts == sorted(depts)
+
+    # Update department via /save
+    save_res = client.post(
+        f"/api/v1/documents/{file_id1}/save",
+        json={
+            "folder_path": "archive/기획조정실",
+            "filename": "dept-test1.txt",
+            "document_overview": ["부서 변경 검증"],
+            "department": "경영지원본부"
+        }
+    )
+    assert save_res.status_code == 200
+
+    dept_res_after = client.get("/api/v1/documents/departments")
+    assert "경영지원본부" in dept_res_after.json()["data"]
+
+    client.delete(f"/api/v1/documents/{file_id1}")
+    client.delete(f"/api/v1/documents/{file_id2}")

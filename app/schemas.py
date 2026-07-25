@@ -168,6 +168,7 @@ class SaveDocumentRequest(BaseModel):
     folder_path: str = Field(..., description="수정된 저장 대상 폴더 경로")
     filename: str = Field(..., description="수정된 파일명")
     document_overview: List[str] = Field(..., description="수정된 문서 개요 목록")
+    department: Optional[str] = Field(None, description="수정된 소속 부서명")
     analysis_data: Optional[AnalysisData] = None
     summary_data: Optional[SummaryResult] = None
     verification_data: Optional[ValidationResult] = None
@@ -179,6 +180,11 @@ class SaveDocumentResponse(BaseModel):
     archived_file_path: str
 
 # 7. Search & Update Schemas
+class DepartmentListResponse(BaseModel):
+    success: bool = True
+    total_count: int
+    data: List[str]
+
 class SearchItem(BaseModel):
     file_id: str
     original_filename: str
@@ -201,6 +207,7 @@ class SummaryUpdateRequest(BaseModel):
 
 class DocumentResultsUpdate(BaseModel):
     """사용자가 수정한 분석·요약·검증 결과 전체를 저장하는 요청."""
+    department: Optional[str] = Field(None, description="수정된 소속 부서명")
     analysis_data: AnalysisData
     summary_data: SummaryResult
     verification_data: ValidationResult
@@ -240,6 +247,7 @@ class UnconfirmedDocumentItem(BaseModel):
     original_filename: str
     renamed_filename: str
     saved_folder: str
+    department: str = "디지털혁신팀"
     one_line_summary: str
     user_confirmed: bool = False
     uploaded_at: str
@@ -252,11 +260,13 @@ class UnconfirmedListResponse(BaseModel):
 class ConfirmDocumentRequest(BaseModel):
     folder_path: str = Field(..., description="저장 대상 폴더 경로")
     document_overview: List[str] = Field(..., description="요약 개요 목록")
+    department: Optional[str] = Field(None, description="소속 부서명")
 
 class BatchConfirmItem(BaseModel):
     file_id: str
     folder_path: str
     document_overview: List[str]
+    department: Optional[str] = None
 
 class BatchConfirmRequest(BaseModel):
     items: List[BatchConfirmItem]
