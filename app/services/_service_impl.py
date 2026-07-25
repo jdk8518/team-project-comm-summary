@@ -29,8 +29,13 @@ def _call_llm_api(prompt: str, system_msg: str, temperature: float = 0.2) -> tup
     """
     설정된 AI 프로바이더로 LLM API를 호출하고 JSON dict를 반환합니다.
     호출 실패 또는 파싱 실패 시 None을 반환하며, API 키는 로그에 출력하지 않습니다.
+
+    주의: monkeypatch.setattr(services, 'get_ai_config', ...)이 동작하도록
+    app.services 모듈을 통해 get_ai_config, _call_openai, _call_google,
+    _call_deepseek를 late-binding으로 호출합니다.
     """
-    cfg = get_ai_config()
+    import app.services as _svc
+    cfg = _svc.get_ai_config()
 
     if cfg.provider == "mock":
         return None, None
@@ -39,15 +44,16 @@ def _call_llm_api(prompt: str, system_msg: str, temperature: float = 0.2) -> tup
         return None, f"{cfg.provider} AI API 키가 설정되지 않았습니다."
 
     if cfg.provider == "openai":
-        return _call_openai(cfg.api_key, cfg.model, system_msg, prompt, temperature)
+        return _svc._call_openai(cfg.api_key, cfg.model, system_msg, prompt, temperature)
 
     if cfg.provider in ("google", "gemini"):
-        return _call_google(cfg.api_key, cfg.model, system_msg, prompt)
+        return _svc._call_google(cfg.api_key, cfg.model, system_msg, prompt)
 
     if cfg.provider == "deepseek":
-        return _call_deepseek(cfg.api_key, cfg.model, system_msg, prompt, temperature)
+        return _svc._call_deepseek(cfg.api_key, cfg.model, system_msg, prompt, temperature)
 
     return None, f"지원하지 않는 AI provider입니다: {cfg.provider}"
+
 
 
 def _call_openai(api_key: str, model: str, system_msg: str, prompt: str, temperature: float) -> tuple[dict | None, str | None]:
@@ -210,7 +216,8 @@ def _analysis_fallback(
     error_message: Optional[str] = None,
 ) -> AnalysisData:
     """LLM 호출 실패 시 규칙 기반으로 분석 결과를 생성합니다."""
-    cfg = get_ai_config()
+    import app.services as _svc
+    cfg = _svc.get_ai_config()
     lines = [line.strip() for line in raw_text.split("\n") if line.strip()]
     document_purpose = "DECISION_AND_REPORT" if ("보고" in title or "의결" in title) else "REPORT"
 

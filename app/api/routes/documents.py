@@ -1,3 +1,10 @@
+"""
+app/api/routes/documents.py
+Presentation / Router Layer — 문서 분석 API 엔드포인트 정의
+
+계층적 모놀리스 구조:
+  Router → Service → Agent → Model
+"""
 import os
 import uuid
 from typing import Optional, List
@@ -54,7 +61,7 @@ async def analyze_document(
     temp_dir = "temp/uploads"
     os.makedirs(temp_dir, exist_ok=True)
     temp_path = os.path.join(temp_dir, f"{file_id}_{filename}")
-    
+
     with open(temp_path, "wb") as f:
         f.write(file_bytes)
 
@@ -325,7 +332,7 @@ async def download_original_file(file_id: str):
 
     file_bytes, filename = file_data
     stream = io.BytesIO(file_bytes)
-    
+
     from urllib.parse import quote
     encoded_filename = quote(filename)
     headers = {
@@ -376,7 +383,6 @@ async def move_document_folder(file_id: str, req: MoveFileRequest):
         new_filename=req.new_filename,
     )
     if not success:
-        # new_path에 오류 메시지가 담겨 있음
         raise HTTPException(status_code=400, detail=new_path)
 
     return MoveFileResponse(
@@ -397,7 +403,6 @@ async def recommend_document_folder(file_id: str):
     if not doc:
         raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다.")
 
-    # 추천 키워드: 조직명 + 개념어 + 부서명
     analysis = doc.get("analysis_data")
     keywords: list[str] = [doc.get("department", "")]
     if analysis and hasattr(analysis, "key_keywords"):

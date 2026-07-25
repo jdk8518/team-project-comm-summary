@@ -1,3 +1,8 @@
+"""
+app/schemas.py
+Pydantic 요청/응답 DTO 명세 (원본 정의 — 순환 임포트 방지)
+실제 Pydantic 모델은 여기에 정의되며, app/api/schemas/document.py는 여기서 re-export합니다.
+"""
 from typing import List, Optional, Any, Dict
 from pydantic import BaseModel, Field
 from datetime import datetime

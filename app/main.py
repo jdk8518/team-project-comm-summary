@@ -3,7 +3,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import router as document_router
+from app.api.routes.documents import router as document_router
 from app.parsers import DocumentParsingError
 
 app = FastAPI(
