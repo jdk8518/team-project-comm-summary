@@ -10,3 +10,6 @@ chardet>=5.1.0
 pytest>=7.3.1
 openai>=1.0.0
 python-dotenv>=1.0.0
+# OCR 지원 (이미지 전용 PDF 분석)
+pytesseract>=0.3.10
+Pillow>=10.0.0

@@ -192,3 +192,25 @@ class SearchResponse(BaseModel):
 class SummaryUpdateRequest(BaseModel):
     one_line_summary: Optional[str] = None
     overview_summary: Optional[List[str]] = None
+
+# 8. File Move & Folder Recommend Schemas
+class MoveFileRequest(BaseModel):
+    new_folder_path: str = Field(..., description="이동할 폴더 경로 (없으면 자동 생성)")
+    new_filename: Optional[str] = Field(None, description="변경할 파일명. 생략 시 기존 파일명 유지")
+
+class MoveFileResponse(BaseModel):
+    success: bool = True
+    message: str
+    file_id: str
+    old_path: str
+    new_path: str
+
+class FolderRecommendItem(BaseModel):
+    folder_path: str = Field(..., description="추천 폴더 경로")
+    score: float = Field(..., description="요약 내용 기반 적합도 점수 (0~1)")
+    exists: bool = Field(..., description="실존 폴더 여부")
+
+class FolderRecommendResponse(BaseModel):
+    success: bool = True
+    file_id: str
+    recommendations: List[FolderRecommendItem]

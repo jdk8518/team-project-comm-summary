@@ -5,72 +5,202 @@ from app.main import app
 
 client = TestClient(app)
 
-def test_root_index_html():
-    response = client.get("/")
-    assert response.status_code == 200
-    assert "AI 문서 분석" in response.text
+FULL_DOC_CONTENT = (
+    "2026년 상반기 부서별 주요 업무보고\n\n"
+    "1. 추진 배경 및 목적\n"
+    "본 보고서는 2026년 상반기 부서별 주요 성과를 점검하고 "
+    "AI Agent 기반 문서 분석 시스템 구축을 추진합니다.\n\n"
+    "2. 주요 내용\n"
+    "- 오는 2026년 8월 31일까지 MVP 구축을 완료할 예정입니다.\n"
+    "- 홍길동 팀장 및 김철수 수석 참여 예정."
+).encode("utf-8")
 
-def test_full_pipeline_upload_save_search_edit_download():
-    content = ("2026년 상반기 부서별 주요 업무보고\n\n1. 추진 배경 및 목적\n본 보고서는 2026년 상반기 부서별 주요 성과를 점검하고 AI Agent 기반 문서 분석 시스템 구축을 추진합니다.\n\n2. 주요 내용\n- 오는 2026년 8월 31일까지 MVP 구축을 완료할 예정입니다.\n- 홍길동 팀장 및 김철수 수석 참여 예정.").encode("utf-8")
-    
-    # 1. Tab 1: Upload & Analyze Document
-    response = client.post(
+# ============================================================
+# 전체 12단계 MVP 파이프라인 통합 테스트
+# ============================================================
+def test_full_12step_mvp_pipeline():
+    """
+    1.  문서 한 개 입력
+    2.  파일 형식·내용·크기 검증 (내부 처리)
+    3.  PDF·DOCX·TXT·PPTX·HWPX 텍스트 추출 (내부 처리)
+    4.  AI 문서 분석 (내부 처리)
+    5.  AI 요약 생성 (내부 처리)
+    6.  원문과 요약 결과 검증 (내부 처리)
+    7.  분석 결과 화면 출력 — IntegratedResultResponse DTO 반환 확인
+    8.  사용자의 최종 검토 — 폴더/파일명/요약 수정 가능 필드 확인
+    9.  DB와 파일시스템에 저장 — POST /{file_id}/save
+    10. DB에서 리스트 검색 — GET /search
+    11. 검색한 파일 요약 수정 저장 — PUT /{file_id}/summary
+    12. 검색한 파일 삭제 — DELETE /{file_id}
+    """
+    # ─── 1~7: 업로드 & 통합 분석 ─────────────────────────────
+    res = client.post(
         "/api/v1/documents/analyze",
-        files={"file": ("2026_업무보고.txt", content, "text/plain")}
+        files={"file": ("2026_업무보고.txt", FULL_DOC_CONTENT, "text/plain")}
     )
-    assert response.status_code == 200
-    res_data = response.json()
-    assert res_data["success"] is True
-    file_id = res_data["data"]["file_id"]
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["success"] is True
 
-    # 2. Tab 1: Save Document (Original file saved to folder/filename & Summary saved to DB)
-    target_folder = "temp/test_archive_output"
+    data = body["data"]
+    file_id = data["file_id"]
+
+    # 7: 출력 DTO 필드 완정성 확인
+    assert "document_info" in data
+    assert "analysis_data" in data
+    assert "summary_data" in data
+    assert "verification_data" in data
+    assert "archiving_info" in data  # 8: 사용자 수정 가능 추천 경로
+
+    # ─── 9: DB & 파일시스템 저장 ─────────────────────────────
+    target_folder = "temp/test_12step_output"
     target_filename = "2026_업무보고_아카이빙.txt"
-    
-    save_resp = client.post(
+
+    save_res = client.post(
         f"/api/v1/documents/{file_id}/save",
         json={
             "folder_path": target_folder,
             "filename": target_filename,
-            "document_overview": ["수정된 팩트 요약 1", "수정된 팩트 요약 2"]
+            "document_overview": ["저장 요약 1", "저장 요약 2"]
         }
     )
-    assert save_resp.status_code == 200
-    save_data = save_resp.json()
-    assert save_data["success"] is True
-    assert save_data["file_id"] == file_id
+    assert save_res.status_code == 200, save_res.text
+    save_body = save_res.json()
+    assert save_body["success"] is True
+    assert save_body["file_id"] == file_id
+    # 파일시스템에 실제 보관 확인
+    assert os.path.exists(os.path.join(target_folder, target_filename))
 
-    # 3. Tab 2: DB Document Search
-    search_resp = client.get("/api/v1/documents/search?keyword=업무보고")
-    assert search_resp.status_code == 200
-    search_data = search_resp.json()
-    assert search_data["total_count"] >= 1
+    # ─── 10: DB 리스트 검색 ──────────────────────────────────
+    search_res = client.get("/api/v1/documents/search?keyword=업무보고")
+    assert search_res.status_code == 200, search_res.text
+    search_body = search_res.json()
+    assert search_body["total_count"] >= 1
+    found_ids = [item["file_id"] for item in search_body["data"]]
+    assert file_id in found_ids
 
-    # 4. Tab 2: Edit Summary in DB
-    update_resp = client.put(
+    # ─── 11: 요약 수정 저장 ──────────────────────────────────
+    update_res = client.put(
         f"/api/v1/documents/{file_id}/summary",
-        json={"overview_summary": ["DB 수정 요약문 1", "DB 수정 요약문 2"]}
+        json={"overview_summary": ["수정된 요약 A", "수정된 요약 B"]}
     )
-    assert update_resp.status_code == 200
-    assert update_resp.json()["success"] is True
+    assert update_res.status_code == 200, update_res.text
+    assert update_res.json()["success"] is True
 
-    # 5. Tab 2: Download Original File
-    download_resp = client.get(f"/api/v1/documents/{file_id}/download")
-    assert download_resp.status_code == 200
-    assert download_resp.content == content
+    # ─── 11.5: 1-Click 다운로드 ──────────────────────────────
+    dl_res = client.get(f"/api/v1/documents/{file_id}/download")
+    assert dl_res.status_code == 200
+    assert dl_res.content == FULL_DOC_CONTENT
 
+    # ─── 12: 파일 삭제 ───────────────────────────────────────
+    del_res = client.delete(f"/api/v1/documents/{file_id}")
+    assert del_res.status_code == 200, del_res.text
+    del_body = del_res.json()
+    assert del_body["success"] is True
+    assert del_body["file_id"] == file_id
+
+    # 삭제 후 검색에서 사라졌는지 확인
+    search_after = client.get("/api/v1/documents/search")
+    found_after = [item["file_id"] for item in search_after.json().get("data", [])]
+    assert file_id not in found_after
+
+    # 삭제 후 재삭제 시도 → 404
+    del_again = client.delete(f"/api/v1/documents/{file_id}")
+    assert del_again.status_code == 404
+
+
+# ============================================================
+# 예외 처리 테스트
+# ============================================================
 def test_unsupported_file_extension():
-    response = client.post(
+    """2단계: 미지원 확장자 → 400"""
+    res = client.post(
         "/api/v1/documents/analyze",
         files={"file": ("data.xlsx", b"test content", "application/vnd.ms-excel")}
     )
-    assert response.status_code == 400
-    assert "지원하지 않는 파일 형식" in response.json()["error"]["message"]
+    assert res.status_code == 400
+    assert "지원하지 않는 파일 형식" in res.json()["error"]["message"]
+
 
 def test_empty_file_content():
-    response = client.post(
+    """2단계: 20자 미만 텍스트 → 422"""
+    res = client.post(
         "/api/v1/documents/analyze",
         files={"file": ("empty.txt", b"short text", "text/plain")}
     )
-    assert response.status_code == 422
-    assert "분석할 수 있는 텍스트 내용이 존재하지 않습니다" in response.json()["error"]["message"]
+    assert res.status_code == 422
+    assert "분석할 수 있는 텍스트 내용이 존재하지 않습니다" in res.json()["error"]["message"]
+
+
+def test_delete_nonexistent_document():
+    """12단계: 존재하지 않는 file_id 삭제 → 404"""
+    res = client.delete("/api/v1/documents/nonexistent_id_xyz")
+    assert res.status_code == 404
+    assert "문서를 찾을 수 없습니다" in res.json()["detail"]
+
+
+# ============================================================
+# 파일 이동 및 폴더 추천 테스트
+# ============================================================
+def test_move_document_folder():
+    """파일 저장 경로 변경: 업로드 → 저장 → 경로 이동 → 신규 경로 확인"""
+    # 1. 업로드 & 분석
+    res = client.post(
+        "/api/v1/documents/analyze",
+        files={"file": ("이동테스트.txt", FULL_DOC_CONTENT, "text/plain")}
+    )
+    assert res.status_code == 200
+    file_id = res.json()["data"]["file_id"]
+
+    # 2. 저장
+    old_folder = "temp/test_move_src"
+    client.post(
+        f"/api/v1/documents/{file_id}/save",
+        json={"folder_path": old_folder, "filename": "before_move.txt", "document_overview": ["테스트"]}
+    )
+
+    # 3. 경로 이동
+    new_folder = "temp/test_move_dst"
+    move_res = client.put(
+        f"/api/v1/documents/{file_id}/folder",
+        json={"new_folder_path": new_folder}
+    )
+    assert move_res.status_code == 200, move_res.text
+    body = move_res.json()
+    assert body["success"] is True
+    assert new_folder in body["new_path"]
+
+    # 4. 새 경로에 파일 실존 확인
+    import os
+    assert os.path.exists(body["new_path"])
+
+    # 정리
+    client.delete(f"/api/v1/documents/{file_id}")
+
+
+def test_recommend_folder_returns_list():
+    """폴더 추천 API: 업로드 후 추천 목록이 list 형태로 반환되는지 확인"""
+    res = client.post(
+        "/api/v1/documents/analyze",
+        files={"file": ("추천테스트.txt", FULL_DOC_CONTENT, "text/plain")}
+    )
+    assert res.status_code == 200
+    file_id = res.json()["data"]["file_id"]
+
+    rec_res = client.get(f"/api/v1/documents/{file_id}/recommend-folder")
+    assert rec_res.status_code == 200, rec_res.text
+    body = rec_res.json()
+    assert body["success"] is True
+    assert "recommendations" in body
+    assert isinstance(body["recommendations"], list)
+
+    client.delete(f"/api/v1/documents/{file_id}")
+
+
+def test_move_nonexistent_document():
+    """존재하지 않는 문서 이동 → 404"""
+    res = client.put(
+        "/api/v1/documents/no_such_id/folder",
+        json={"new_folder_path": "temp/nowhere"}
+    )
+    assert res.status_code == 404

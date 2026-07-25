@@ -9,10 +9,12 @@ from app.schemas import (
     IntegratedResultResponse, IntegratedResultData, DocumentInfo, ArchivingInfo,
     AnalysisData, SummaryResult, ValidationResult,
     SaveDocumentRequest, SaveDocumentResponse,
-    SearchResponse, SearchItem, SummaryUpdateRequest
+    SearchResponse, SearchItem, SummaryUpdateRequest,
+    MoveFileRequest, MoveFileResponse,
+    FolderRecommendItem, FolderRecommendResponse,
 )
 from app.parsers import validate_file_metadata, extract_text_from_file, structure_text, DocumentParsingError
-from app.services import run_document_analysis, run_document_summarization, run_document_validation
+from app.services import run_document_analysis, run_document_summarization, run_document_validation, recommend_folder
 from app import db
 
 router = APIRouter(prefix="/api/v1/documents", tags=["Document AI Analysis System"])
@@ -120,11 +122,34 @@ async def save_document(file_id: str, req: SaveDocumentRequest):
 @router.get("/search", response_model=SearchResponse, summary="DB 요약 다각도 검색 API")
 async def search_documents(
     keyword: Optional[str] = Query(None, description="검색어 (키워드, 요약문, 제목)"),
-    department: Optional[str] = Query(None, description="소속 부서명")
+    department: Optional[str] = Query(None, description="소속 부서명"),
+    folder: Optional[str] = Query(None, description="폴더 경로 필터 (해당 폴더 저장 문서만 반환)"),
 ):
     results = db.search_documents_in_db(keyword, department)
+
+    # 폴더 필터: 지정한 경우 saved_folder 또는 recommended_folder가 일치하는 문서만 반환
+    if folder and folder.strip():
+        normalized = folder.strip().replace("\\", "/").rstrip("/")
+        filtered = []
+        for item in results:
+            doc = db.get_document_by_id(item["file_id"])
+            if doc:
+                doc_folder = (doc.get("saved_folder") or doc.get("recommended_folder", "")).replace("\\", "/").rstrip("/")
+                if doc_folder == normalized:
+                    filtered.append(item)
+        results = filtered
+
     items = [SearchItem(**r) for r in results]
     return SearchResponse(success=True, total_count=len(items), data=items)
+
+@router.get("/folder-tree", summary="폴더 계층 구조 조회 API")
+async def get_folder_tree():
+    """
+    DB에 저장된 전체 문서를 폴더 경로 기준으로 계층화하여 반환합니다.
+    파일 검색 화면의 좌측 폴더 탐색기 패널에 사용합니다.
+    """
+    tree = db.get_folder_tree()
+    return {"success": True, **tree}
 
 @router.get("/{file_id}/result", response_model=IntegratedResultResponse, summary="특정 문서의 통합 결과 조회 API")
 async def get_document_result(file_id: str):
@@ -180,6 +205,70 @@ async def download_original_file(file_id: str):
     }
     return StreamingResponse(stream, media_type="application/octet-stream", headers=headers)
 
+@router.delete("/{file_id}", summary="DB 레코드 및 아카이빙 원본 파일 삭제 API")
+async def delete_document(file_id: str):
+    """
+    DB 레코드를 삭제하고 아카이빙된 원본 파일을 파일시스템에서 제거합니다.
+    삭제된 문서는 복구할 수 없습니다.
+    """
+    success, message = db.delete_document_from_db(file_id)
+    if not success:
+        raise HTTPException(status_code=404, detail=message)
+    return {"success": True, "message": message, "file_id": file_id}
+
+@router.put("/{file_id}/folder", response_model=MoveFileResponse, summary="아카이빙 파일 저장 경로 이동 API")
+async def move_document_folder(file_id: str, req: MoveFileRequest):
+    """
+    지정한 새 폴더 경로로 원본 파일을 이동합니다.
+    경로가 없으면 자동으로 폴더를 생성합니다.
+    """
+    doc = db.get_document_by_id(file_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다.")
+
+    success, old_path, new_path = db.move_document_file(
+        file_id=file_id,
+        new_folder_path=req.new_folder_path,
+        new_filename=req.new_filename,
+    )
+    if not success:
+        # new_path에 오류 메시지가 담겨 있음
+        raise HTTPException(status_code=400, detail=new_path)
+
+    return MoveFileResponse(
+        success=True,
+        message="파일이 새 경로로 성공적으로 이동되었습니다.",
+        file_id=file_id,
+        old_path=old_path,
+        new_path=new_path,
+    )
+
+@router.get("/{file_id}/recommend-folder", response_model=FolderRecommendResponse, summary="요약 기반 저장 경로 추천 API")
+async def recommend_document_folder(file_id: str):
+    """
+    저장된 요약 키워드를 바탕으로 output/archive/ 하위 실존 폴더 중
+    가장 근접한 경로를 상위 3개 추천합니다.
+    """
+    doc = db.get_document_by_id(file_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다.")
+
+    # 추천 키워드: 조직명 + 개념어 + 부서명
+    analysis = doc.get("analysis_data")
+    keywords: list[str] = [doc.get("department", "")]
+    if analysis and hasattr(analysis, "key_keywords"):
+        kw = analysis.key_keywords
+        keywords += kw.organizations + kw.concepts
+
+    existing_folders = db.get_existing_archive_folders()
+    recommendations = recommend_folder(existing_folders, keywords)
+
+    return FolderRecommendResponse(
+        success=True,
+        file_id=file_id,
+        recommendations=[FolderRecommendItem(**r) for r in recommendations],
+    )
+
 # Alias routes
 @router.post("/api/documents/analyze", response_model=IntegratedResultResponse, include_in_schema=False)
 async def analyze_document_alias(file: UploadFile = File(...)):
@@ -192,3 +281,7 @@ async def save_document_alias(file_id: str, req: SaveDocumentRequest):
 @router.get("/api/documents/search", response_model=SearchResponse, include_in_schema=False)
 async def search_documents_alias(keyword: Optional[str] = Query(None), department: Optional[str] = Query(None)):
     return await search_documents(keyword, department)
+
+@router.delete("/api/documents/{file_id}", include_in_schema=False)
+async def delete_document_alias(file_id: str):
+    return await delete_document(file_id)

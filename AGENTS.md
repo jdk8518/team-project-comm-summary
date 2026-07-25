@@ -78,4 +78,5 @@ HWPX 읽기, 수정, 생성, 검증 기능은 [`python-hwpx`](https://github.com
 문서 쓰기 후에는 `save_to_path(..., return_report=True)`의 `MutationReport`를 확인하고, 비민감 HWPX 테스트 픽스처로 회귀 테스트를 추가합니다. 테스트는 요청한 내용 변경과 저장 결과의 라이브러리 검증 통과를 모두 확인해야 합니다. 개인정보·기밀·운영 문서는 저장소에 커밋하지 않습니다.
 
 # walkthrough
-./walkthrough/SKILL.md 를 읽는다.
+
+`./walkthrough/SKILL.md` 를 읽는다.

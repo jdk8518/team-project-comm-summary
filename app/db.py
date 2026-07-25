@@ -135,3 +135,167 @@ def get_document_file_bytes(file_id: str) -> Optional[Tuple[bytes, str]]:
     if file_id in document_files and file_id in document_db:
         return document_files[file_id], document_db[file_id]["original_filename"]
     return None
+
+def delete_document_from_db(file_id: str) -> Tuple[bool, str]:
+    """DB 레코드 및 아카이빙 원본 파일을 삭제한다."""
+    if file_id not in document_db:
+        return False, "문서를 찾을 수 없습니다."
+
+    doc = document_db[file_id]
+
+    # 1. 아카이빙된 원본 파일 물리 삭제 (존재하는 경우에만)
+    archived_path = doc.get("archived_path")
+    if archived_path and os.path.exists(archived_path):
+        try:
+            os.remove(archived_path)
+        except Exception as e:
+            return False, f"아카이빙 파일 삭제 중 오류: {str(e)}"
+
+    # 2. 임시 업로드 파일 물리 삭제
+    temp_file_path = doc.get("file_path")
+    if temp_file_path and os.path.exists(temp_file_path):
+        try:
+            os.remove(temp_file_path)
+        except Exception:
+            pass  # 임시 파일 삭제 실패는 무시
+
+    # 3. 인메모리 DB 레코드 및 바이너리 제거
+    document_db.pop(file_id, None)
+    document_files.pop(file_id, None)
+
+    return True, f"문서 {file_id} 가 성공적으로 삭제되었습니다."
+
+def move_document_file(
+    file_id: str,
+    new_folder_path: str,
+    new_filename: Optional[str] = None,
+) -> Tuple[bool, str, str]:
+    """
+    아카이빙된 원본 파일을 새 경로로 이동하고 DB를 업데이트한다.
+
+    Returns:
+        (success, old_path, new_path)
+        실패 시 (False, "", 오류 메시지)
+    """
+    if file_id not in document_db:
+        return False, "", "문서를 찾을 수 없습니다."
+
+    doc = document_db[file_id]
+    old_path: str = doc.get("archived_path", "")
+
+    # 이동할 파일명 결정 (생략 시 기존 파일명 유지)
+    filename = new_filename or doc.get("saved_filename") or doc.get("original_filename", "unknown")
+
+    try:
+        os.makedirs(new_folder_path, exist_ok=True)
+        new_full_path = os.path.join(new_folder_path, filename)
+
+        if old_path and os.path.exists(old_path):
+            import shutil
+            shutil.move(old_path, new_full_path)
+        else:
+            # 아카이빙 파일이 없으면 인메모리 바이너리로 새로 생성
+            file_bytes = document_files.get(file_id)
+            if file_bytes is None:
+                return False, "", "이동할 원본 파일 데이터가 존재하지 않습니다."
+            with open(new_full_path, "wb") as f:
+                f.write(file_bytes)
+
+        # DB 경로 업데이트
+        doc["archived_path"] = new_full_path
+        doc["saved_folder"] = new_folder_path
+        doc["saved_filename"] = filename
+
+        return True, old_path, new_full_path
+
+    except Exception as e:
+        return False, "", f"파일 이동 중 오류가 발생했습니다: {str(e)}"
+
+
+ARCHIVE_ROOT = "output/archive"  # 폴더 추천 기준 루트
+
+def get_existing_archive_folders() -> List[str]:
+    """
+    ARCHIVE_ROOT 하위에 실존하는 폴더 경로 목록을 반환한다.
+    루트가 없으면 빈 리스트를 반환한다.
+    """
+    if not os.path.isdir(ARCHIVE_ROOT):
+        return []
+
+    folders: List[str] = []
+    for dirpath, dirnames, _ in os.walk(ARCHIVE_ROOT):
+        for d in dirnames:
+            folders.append(os.path.join(dirpath, d).replace("\\", "/"))
+    # 루트 자체도 포함
+    folders.insert(0, ARCHIVE_ROOT)
+    return folders
+
+
+def get_folder_tree() -> Dict[str, Any]:
+    """
+    DB에 저장된 문서 레코드를 폴더 경로 기준으로 계층화하여 반환한다.
+
+    반환 구조:
+    {
+        "folders": {
+            "output/archive": {
+                "path": "output/archive",
+                "children": {
+                    "output/archive/디지털혁신팀": {
+                        "path": "output/archive/디지털혁신팀",
+                        "children": {},
+                        "files": [{"file_id": ..., "filename": ..., "uploaded_at": ...}]
+                    }
+                },
+                "files": []
+            }
+        },
+        "total_files": 3
+    }
+    """
+    # 폴더 트리를 dict로 표현. key = 정규화된 폴더 경로
+    tree: Dict[str, Any] = {}
+
+    def _ensure_node(path: str) -> Dict[str, Any]:
+        normalized = path.replace("\\", "/").rstrip("/")
+        if normalized not in tree:
+            tree[normalized] = {"path": normalized, "children": {}, "files": []}
+        return tree[normalized]
+
+    for file_id, doc in document_db.items():
+        folder = doc.get("saved_folder") or doc.get("recommended_folder", ARCHIVE_ROOT)
+        folder = folder.replace("\\", "/").rstrip("/")
+        filename = doc.get("saved_filename") or doc.get("original_filename", "unknown")
+        uploaded_at = doc.get("uploaded_at", "")
+
+        node = _ensure_node(folder)
+        node["files"].append({
+            "file_id": file_id,
+            "filename": filename,
+            "uploaded_at": uploaded_at,
+        })
+
+        # 상위 폴더도 트리에 등록
+        parts = folder.split("/")
+        for i in range(1, len(parts)):
+            parent = "/".join(parts[:i])
+            child = "/".join(parts[:i + 1])
+            _ensure_node(parent)
+            _ensure_node(child)
+            tree[parent]["children"][child] = tree[child]
+
+    # 루트가 없으면 빈 루트 생성
+    if not tree:
+        _ensure_node(ARCHIVE_ROOT)
+
+    # 최상위(루트) 노드만 골라서 반환
+    # — 다른 노드의 children에 포함된 경우 root가 아님
+    all_children: set[str] = set()
+    for node in tree.values():
+        all_children.update(node["children"].keys())
+    roots = {k: v for k, v in tree.items() if k not in all_children}
+
+    return {
+        "folders": roots,
+        "total_files": sum(len(node["files"]) for node in tree.values()),
+    }
