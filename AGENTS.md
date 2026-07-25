@@ -2,7 +2,7 @@
 
 ## 1. 프로젝트 개요
 
-- 프로젝트명:AI Agent를 활용한 회의록, 업무보고, 공문자료 등을 이용한  문서 분석 시스템 구축 
+- 프로젝트명:AI Agent를 활용한 회의록, 업무보고, 공문자료 등을 이용한  문서 분석 시스템 구축
 - 프로젝트 목적:문서를 업로드하면 AI가 핵심 내용을 요약하고 검증 결과를 제공한다.
 - 주요 기술: Language: Python 3
             Backend: FastAPI
@@ -68,10 +68,11 @@
 - 다른 기능과 연결할 부분
 - 공통 구조에 미치는 영향
 - 남아 있는 문제
+
 ## 8. 외부 문서 처리: HWPX
 
 HWPX 읽기, 수정, 생성, 검증 기능은 [`python-hwpx`](https://github.com/airmang/python-hwpx)를 사용해 구현합니다. Python 3.10 이상에서 `pip install python-hwpx`로 설치하고, 의존성은 프로젝트의 `requirements.txt` 또는 `pyproject.toml`과 잠금 파일에 명시합니다. 외부 라이브러리의 소스 코드를 이 저장소에 복사하지 않습니다.
 
-`HwpxDocument.open()`으로 원본을 열고, 결과는 예를 들어 `output/report-updated.hwpx`처럼 새 경로에 저장합니다. 개발·테스트 중 사용자 원본을 덮어쓰지 않습니다. HWP(v5 바이너리)는 지원 대상이 아니므로 먼저 HWPX로 변환해야 합니다.
+`HwpxDocument.open()`으로 원본을 열고, 결과는 예를 들어 `output/report-updated.hwpx`처럼 새 경로에 저장합니다. 개발·테스트 중 사용자 원본을 덮어쓰지 않습니다. HWP(v5 바이너리)는 먼저 HWPX로 변환해야 합니다.
 
 문서 쓰기 후에는 `save_to_path(..., return_report=True)`의 `MutationReport`를 확인하고, 비민감 HWPX 테스트 픽스처로 회귀 테스트를 추가합니다. 테스트는 요청한 내용 변경과 저장 결과의 라이브러리 검증 통과를 모두 확인해야 합니다. 개인정보·기밀·운영 문서는 저장소에 커밋하지 않습니다.
