@@ -79,8 +79,12 @@ async def analyze_document(
     structured_content_dict = structure_text(raw_cleaned_text)
     db.update_document_extracted(file_id, raw_cleaned_text, structured_content_dict)
 
-    # 4. AI 문서 핵심 구조 분석
-    analysis_data = run_document_analysis(file_id, raw_cleaned_text, structured_content_dict)
+    # 4. AI 문서 핵심 구조 분석 (기존 부서 목록 제공 → 추천 부서 포함)
+    existing_departments = db.get_all_departments()
+    analysis_data = run_document_analysis(
+        file_id, raw_cleaned_text, structured_content_dict,
+        existing_departments=existing_departments
+    )
     db.update_document_analysis(file_id, analysis_data)
 
     # AI 폴더 추천은 현재 파일 저장 루트에 실제로 존재하는 폴더만 후보로 사용한다.

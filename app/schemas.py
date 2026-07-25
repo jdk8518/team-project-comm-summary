@@ -90,6 +90,7 @@ class AnalysisData(BaseModel):
     key_keywords: KeyKeywords
     verification_candidates: List[VerificationCandidate]
     evidence_grounding: List[EvidenceGrounding]
+    recommended_departments: List[str] = []  # AI 추천 부서 목록 (기본값 빈 리스트)
     error_message: Optional[str] = None
 
 class AnalyzeResponse(BaseModel):

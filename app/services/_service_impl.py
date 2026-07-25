@@ -141,10 +141,15 @@ def run_document_analysis(
     file_id: str,
     raw_text: str,
     structured_content: Dict[str, Any],
+    existing_departments: List[str] | None = None,
 ) -> AnalysisData:
-    """문서 원문을 AI로 분석하여 8대 핵심 구조와 5대 범주 키워드를 반환합니다."""
+    """문서 원문을 AI로 분석하여 8대 핵심 구조와 5대 범주 키워드를 반환합니다.
+
+    Args:
+        existing_departments: DB에 등록된 부서 목록. 전달 시 AI가 추천 부서를 응답에 포함합니다.
+    """
     title = structured_content.get("title", "")
-    prompt = _build_analysis_prompt(title, raw_text)
+    prompt = _build_analysis_prompt(title, raw_text, existing_departments)
     system_msg = "You are a professional AI document analyst. Respond strictly in valid JSON."
 
     parsed, ai_error = _call_llm_api(prompt, system_msg, temperature=0.2)
@@ -158,12 +163,24 @@ def run_document_analysis(
     return _analysis_fallback(file_id, title, raw_text, structured_content, ai_error)
 
 
-def _build_analysis_prompt(title: str, raw_text: str) -> str:
+def _build_analysis_prompt(
+    title: str,
+    raw_text: str,
+    existing_departments: List[str] | None = None,
+) -> str:
+    dept_section = ""
+    if existing_departments:
+        dept_list_str = json.dumps(existing_departments, ensure_ascii=False)
+        dept_section = f"""
+[등록된 부서 목록]: {dept_list_str}
+위 부서 목록에서 이 문서와 가장 관련 있는 부서를 1~3개 선택하여 recommended_departments에 포함하세요.
+부서 목록이 비어있으면 빈 배열을 반환하세요."""
+
     return f"""다음 문서를 분석하여 반드시 지정된 JSON 형식으로만 응답해 주세요.
 
 [문서 제목]: {title}
 [문서 원문]:
-{raw_text[:3000]}
+{raw_text[:3000]}{dept_section}
 
 [출력 JSON 구조]:
 {{
@@ -187,12 +204,17 @@ def _build_analysis_prompt(title: str, raw_text: str) -> str:
   ],
   "evidence_grounding": [
     {{"entity_or_item": "항목명", "section_id": 1, "original_sentence": "원문 구절"}}
-  ]
+  ],
+  "recommended_departments": ["추천부서1"]
 }}"""
 
 
 def _parse_analysis_response(file_id: str, data: dict, title: str) -> AnalysisData | None:
     try:
+        raw_dept = data.get("recommended_departments", [])
+        recommended_departments = [
+            d for d in raw_dept if isinstance(d, str) and d.strip()
+        ] if isinstance(raw_dept, list) else []
         return AnalysisData(
             file_id=file_id,
             analysis_status="SUCCESS",
@@ -203,6 +225,7 @@ def _parse_analysis_response(file_id: str, data: dict, title: str) -> AnalysisDa
             key_keywords=KeyKeywords(**data.get("key_keywords", {})),
             verification_candidates=[VerificationCandidate(**vc) for vc in data.get("verification_candidates", [])],
             evidence_grounding=[EvidenceGrounding(**eg) for eg in data.get("evidence_grounding", [])],
+            recommended_departments=recommended_departments,
         )
     except Exception:
         return None

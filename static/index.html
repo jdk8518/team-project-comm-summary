@@ -485,7 +485,21 @@
         </div>
         <div style="margin-bottom: 1rem;">
           <label style="font-size: 0.85rem; color: var(--text-sub);">소속 부서 (수정 가능)</label>
-          <input type="text" class="form-input" id="editDepartment" placeholder="예: 디지털혁신팀" style="margin-top:0.2rem;">
+          <div style="display:flex; gap:0.5rem; align-items:center; margin-top:0.2rem; position:relative;">
+            <input type="text" class="form-input" id="editDepartment" placeholder="예: 디지털혁신팀" style="margin-top:0; flex:1;">
+            <div style="position:relative;">
+              <button
+                id="btnAiDeptRecommend"
+                class="btn-action"
+                style="width:auto; margin-top:0; padding:0.45rem 0.8rem; font-size:0.78rem; white-space:nowrap; display:none;"
+                onclick="toggleAiDeptDropdown(event)"
+              >🤖 AI 추천 부서 ▼</button>
+              <div
+                id="aiDeptDropdown"
+                style="display:none; position:absolute; right:0; top:calc(100% + 4px); min-width:200px; background:var(--card-bg,#1e2a3a); border:1px solid var(--border,#334); border-radius:8px; box-shadow:0 4px 16px rgba(0,0,0,0.4); z-index:200; overflow:hidden;"
+              ></div>
+            </div>
+          </div>
         </div>
         <div>
           <label style="font-size: 0.85rem; color: var(--text-sub);">추천 재지정 파일명</label>
@@ -1070,6 +1084,14 @@
     setDomValue('editFolder', displayArchivePath(arch.recommended_folder || `output/archive/${defaultDept}/`));
     setDomValue('editFilename', arch.recommended_filename || info.original_filename);
     setDomValue('editDepartment', data.department || defaultDept);
+
+    // AI 추천 부서 버튼: recommended_departments가 있을 때만 표시
+    const recDepts = (data.analysis_data || {}).recommended_departments || [];
+    const btnAiDept = document.getElementById('btnAiDeptRecommend');
+    if (btnAiDept) {
+      btnAiDept.style.display = recDepts.length > 0 ? '' : 'none';
+      btnAiDept.dataset.departments = JSON.stringify(recDepts);
+    }
 
     const sData = data.summary_data || {};
     setDomValue('editOverview', (sData.document_overview || []).join('\n'));
@@ -1780,6 +1802,68 @@
 
   function applyRecommendedFolder(folderPath) {
     document.getElementById('modalFolderPath').value = folderPath;
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // AI 추천 부서 드롭다운
+  // ─────────────────────────────────────────────────────────────
+  function toggleAiDeptDropdown(event) {
+    event.stopPropagation();
+    const btn = document.getElementById('btnAiDeptRecommend');
+    const dropdown = document.getElementById('aiDeptDropdown');
+    if (!btn || !dropdown) return;
+
+    const isVisible = dropdown.style.display !== 'none';
+    if (isVisible) {
+      dropdown.style.display = 'none';
+      return;
+    }
+
+    // 드롭다운 항목 구성
+    const depts = JSON.parse(btn.dataset.departments || '[]');
+    dropdown.innerHTML = '';
+    if (depts.length === 0) {
+      dropdown.innerHTML = '<div style="padding:0.7rem 1rem; color:var(--text-sub); font-size:0.82rem;">추천 부서가 없습니다.</div>';
+    } else {
+      depts.forEach(dept => {
+        const item = document.createElement('div');
+        item.textContent = `AI가 추천한 부서: ${dept}`;
+        item.style.cssText = [
+          'padding:0.65rem 1rem',
+          'font-size:0.83rem',
+          'cursor:pointer',
+          'color:var(--text-main, #e2e8f0)',
+          'border-bottom:1px solid var(--border, #2d3748)',
+          'transition:background 0.15s',
+        ].join(';');
+        item.addEventListener('mouseenter', () => item.style.background = 'var(--hover-bg, rgba(96,165,250,0.12))');
+        item.addEventListener('mouseleave', () => item.style.background = '');
+        item.addEventListener('click', () => selectAiDept(dept));
+        dropdown.appendChild(item);
+      });
+      // 마지막 항목 border 제거
+      if (dropdown.lastElementChild) {
+        dropdown.lastElementChild.style.borderBottom = 'none';
+      }
+    }
+
+    dropdown.style.display = 'block';
+
+    // 외부 클릭 시 닫기
+    const closeHandler = (e) => {
+      if (!dropdown.contains(e.target) && e.target !== btn) {
+        dropdown.style.display = 'none';
+        document.removeEventListener('click', closeHandler);
+      }
+    };
+    setTimeout(() => document.addEventListener('click', closeHandler), 0);
+  }
+
+  function selectAiDept(dept) {
+    const input = document.getElementById('editDepartment');
+    if (input) input.value = dept;
+    const dropdown = document.getElementById('aiDeptDropdown');
+    if (dropdown) dropdown.style.display = 'none';
   }
 
   async function loadUploadFolderRecommend() {
