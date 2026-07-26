@@ -12,6 +12,7 @@ from app.services._service_impl import (
     run_document_analysis,
     run_document_summarization,
     run_document_validation,
+    recommend_department,
     recommend_folder,
     _call_llm_api,
     _call_openai,
@@ -35,5 +36,6 @@ __all__ = [
     "run_document_analysis",
     "run_document_summarization",
     "run_document_validation",
+    "recommend_department",
     "recommend_folder",
 ]

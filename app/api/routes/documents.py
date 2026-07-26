@@ -23,10 +23,10 @@ from app.schemas import (
     FolderRecommendItem, FolderRecommendResponse,
     UnconfirmedDocumentItem, UnconfirmedListResponse,
     ConfirmDocumentRequest, BatchConfirmItem, BatchConfirmRequest, BatchDeleteRequest,
-    DepartmentListResponse,
+    DepartmentListResponse, DepartmentRecommendRequest, DepartmentRecommendResponse,
 )
 from app.parsers import validate_file_metadata, extract_text_from_file, structure_text, DocumentParsingError
-from app.services import run_document_analysis, run_document_summarization, run_document_validation, recommend_folder
+from app.services import run_document_analysis, run_document_summarization, run_document_validation, recommend_folder, recommend_department
 from app import db
 
 router = APIRouter(prefix="/api/v1/documents", tags=["Document AI Analysis System"])
@@ -298,9 +298,10 @@ async def get_document_result(file_id: str):
             uploaded_at=doc["uploaded_at"]
         ),
         archiving_info=ArchivingInfo(
-            recommended_folder=doc.get("saved_folder", doc.get("recommended_folder", "output/archive/디지털혁신팀/")),
-            recommended_filename=doc.get("saved_filename", doc.get("recommended_filename", doc["original_filename"]))
+            recommended_folder=doc.get("saved_folder") or doc.get("recommended_folder") or "output/archive/디지털혁신팀/",
+            recommended_filename=doc.get("saved_filename") or doc.get("recommended_filename") or doc.get("original_filename") or "document"
         ),
+        department=doc.get("department") or "",
         analysis_data=analysis,
         summary_data=summary_data_obj.summary_result,
         verification_data=validation.validation_result
@@ -381,6 +382,7 @@ async def move_document_folder(file_id: str, req: MoveFileRequest):
     if not doc:
         raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다.")
 
+    requested_filename = req.new_filename or doc.get("saved_filename") or doc.get("original_filename")
     success, old_path, new_path = db.move_document_file(
         file_id=file_id,
         new_folder_path=req.new_folder_path,
@@ -389,9 +391,17 @@ async def move_document_folder(file_id: str, req: MoveFileRequest):
     if not success:
         raise HTTPException(status_code=400, detail=new_path)
 
+    updated_doc = db.get_document_by_id(file_id)
+    final_filename = updated_doc.get("saved_filename") if updated_doc else os.path.basename(new_path)
+
+    if requested_filename and final_filename and requested_filename != final_filename:
+        message = f"이동 위치에 동일한 이름의 파일이 존재하여 '{final_filename}'(으)로 저장되었습니다."
+    else:
+        message = "파일이 새 경로로 성공적으로 이동되었습니다."
+
     return MoveFileResponse(
         success=True,
-        message="파일이 새 경로로 성공적으로 이동되었습니다.",
+        message=message,
         file_id=file_id,
         old_path=old_path,
         new_path=new_path,
@@ -437,6 +447,16 @@ async def recommend_document_folder_from_edits(file_id: str, req: FolderRecommen
         file_id=file_id,
         recommendations=[FolderRecommendItem(**item) for item in recommendations],
     )
+
+
+@router.post("/{file_id}/recommend-department", response_model=DepartmentRecommendResponse, summary="요약 기반 소속 부서 추천 API")
+async def recommend_document_department(file_id: str, req: DepartmentRecommendRequest):
+    if not db.get_document_by_id(file_id):
+        raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다.")
+    recommendations = recommend_department(
+        db.get_all_departments(), req.summary, req.purpose, req.message, req.keywords
+    )
+    return DepartmentRecommendResponse(success=True, file_id=file_id, recommendations=recommendations)
 
 # Alias routes
 @router.post("/api/documents/analyze", response_model=IntegratedResultResponse, include_in_schema=False)

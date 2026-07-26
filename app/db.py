@@ -852,15 +852,28 @@ def move_document_file(
 
         if old_path and os.path.abspath(old_path) == os.path.abspath(new_full_path):
             pass
-        elif old_path and os.path.exists(old_path):
-            import shutil
-            shutil.move(old_path, new_full_path)
         else:
-            file_bytes_tuple = get_document_file_bytes(file_id)
-            if file_bytes_tuple is None:
-                return False, "", "이동할 원본 파일 데이터가 존재하지 않습니다."
-            with open(new_full_path, "wb") as f:
-                f.write(file_bytes_tuple[0])
+            if os.path.exists(new_full_path):
+                stem, ext = os.path.splitext(filename)
+                counter = 1
+                candidate_filename = f"{stem}({counter}){ext}"
+                candidate_path = os.path.join(normalized_folder_path, candidate_filename)
+                while os.path.exists(candidate_path):
+                    counter += 1
+                    candidate_filename = f"{stem}({counter}){ext}"
+                    candidate_path = os.path.join(normalized_folder_path, candidate_filename)
+                filename = candidate_filename
+                new_full_path = candidate_path
+
+            if old_path and os.path.exists(old_path):
+                import shutil
+                shutil.move(old_path, new_full_path)
+            else:
+                file_bytes_tuple = get_document_file_bytes(file_id)
+                if file_bytes_tuple is None:
+                    return False, "", "이동할 원본 파일 데이터가 존재하지 않습니다."
+                with open(new_full_path, "wb") as f:
+                    f.write(file_bytes_tuple[0])
 
         new_summary_path = summary_markdown_path(new_full_path)
         if old_summary_path and os.path.abspath(old_summary_path) != os.path.abspath(new_summary_path):

@@ -163,6 +163,42 @@ def run_document_analysis(
     return _analysis_fallback(file_id, title, raw_text, structured_content, ai_error)
 
 
+def recommend_department(
+    departments: List[str],
+    summary: List[str],
+    purpose: str,
+    message: str,
+    keywords: Dict[str, List[str]],
+) -> List[str]:
+    """추천 후보 부서와 편집 중인 요약을 AI에 전달해 우선순위 부서를 반환합니다."""
+    candidates = [dept.strip() for dept in departments if isinstance(dept, str) and dept.strip()]
+    if not candidates:
+        return []
+
+    prompt = f"""다음 문서 요약을 검토하고, 후보 부서 목록 안에서 가장 적합한 부서를 1~3개 추천하세요.
+후보 부서 목록 밖의 이름은 만들지 마세요. 반드시 JSON만 반환하세요.
+
+[후보 부서]: {json.dumps(candidates, ensure_ascii=False)}
+[개요]: {json.dumps(summary, ensure_ascii=False)}
+[문서 목적]: {purpose}
+[핵심 메시지]: {message}
+[키워드]: {json.dumps(keywords, ensure_ascii=False)}
+
+{{"recommended_departments": ["후보 부서명"]}}"""
+    parsed, _ = _call_llm_api(prompt, "You are a document routing assistant. Respond strictly in valid JSON.", temperature=0.1)
+    if isinstance(parsed, dict):
+        recommended = parsed.get("recommended_departments", [])
+        if isinstance(recommended, list):
+            selected = [dept for dept in recommended if isinstance(dept, str) and dept in candidates]
+            if selected:
+                return selected[:3]
+
+    # API를 사용할 수 없는 환경에서도 후보 목록에서 요약 키워드가 가장 많이 겹치는 부서를 제시합니다.
+    searchable = " ".join([*summary, purpose, message, *[item for values in keywords.values() for item in values]]).lower()
+    ranked = sorted(candidates, key=lambda dept: (dept.lower() in searchable, dept), reverse=True)
+    return ranked[:3]
+
+
 def _build_analysis_prompt(
     title: str,
     raw_text: str,

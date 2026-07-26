@@ -3,6 +3,7 @@ import re
 import pytest
 from fastapi.testclient import TestClient
 from app.main import app
+from app import db
 
 client = TestClient(app)
 
@@ -20,6 +21,41 @@ def test_dashboard_html_disables_stale_javascript_cache():
     res = client.get("/")
     assert res.status_code == 200
     assert "no-store" in res.headers.get("cache-control", "")
+
+
+def test_result_endpoint_handles_unsaved_document_without_null_archiving_fields():
+    """루트 검색에서 노출되는 미저장 문서도 상세 수정 화면용 JSON을 반환해야 한다."""
+    analyzed = client.post(
+        "/api/v1/documents/analyze",
+        files={"file": ("unsaved-root.txt", FULL_DOC_CONTENT, "text/plain")},
+    )
+    assert analyzed.status_code == 200, analyzed.text
+    file_id = analyzed.json()["data"]["file_id"]
+
+    doc = db.get_document_by_id(file_id)
+    doc["saved_folder"] = None
+    doc["saved_filename"] = None
+    db.save_doc_to_sqlite(doc)
+
+    result = client.get(f"/api/v1/documents/{file_id}/result")
+    assert result.status_code == 200, result.text
+    assert result.json()["data"]["archiving_info"]["recommended_folder"]
+
+
+def test_department_recommendation_returns_registered_candidates():
+    analyzed = client.post(
+        "/api/v1/documents/analyze",
+        files={"file": ("department-recommend.txt", FULL_DOC_CONTENT, "text/plain")},
+    )
+    assert analyzed.status_code == 200, analyzed.text
+    file_id = analyzed.json()["data"]["file_id"]
+
+    response = client.post(
+        f"/api/v1/documents/{file_id}/recommend-department",
+        json={"summary": ["부서 업무보고"], "purpose": "REPORT", "message": "검토 필요", "keywords": {}},
+    )
+    assert response.status_code == 200, response.text
+    assert isinstance(response.json()["recommendations"], list)
 
 # ============================================================
 # 전체 12단계 MVP 파이프라인 통합 테스트
@@ -537,3 +573,33 @@ def test_folder_relative_path_filename_upload():
     assert doc.json()["data"]["document_info"]["original_filename"] == "nested_doc.txt"
 
     client.delete(f"/api/v1/documents/{file_id}")
+
+
+def test_duplicate_filename_move_increments_sequence():
+    """이동할 위치에 동일 파일이 존재할 경우 (1) 등 순번을 증가시켜 저장함을 검증"""
+    res1 = client.post(
+        "/api/v1/documents/analyze-auto",
+        files={"file": ("dup_test.txt", FULL_DOC_CONTENT, "text/plain")},
+    )
+    assert res1.status_code == 200
+    file_id1 = res1.json()["data"]["file_id"]
+
+    res2 = client.post(
+        "/api/v1/documents/analyze-auto",
+        files={"file": ("dup_test.txt", FULL_DOC_CONTENT, "text/plain")},
+    )
+    assert res2.status_code == 200
+    file_id2 = res2.json()["data"]["file_id"]
+
+    target_folder = "archive/중복테스트폴더"
+
+    move1 = client.put(f"/api/v1/documents/{file_id1}/folder", json={"new_folder_path": target_folder, "new_filename": "dup_test.txt"})
+    assert move1.status_code == 200
+
+    move2 = client.put(f"/api/v1/documents/{file_id2}/folder", json={"new_folder_path": target_folder, "new_filename": "dup_test.txt"})
+    assert move2.status_code == 200
+    move2_json = move2.json()
+    assert "dup_test(1).txt" in move2_json["new_path"] or "dup_test(1).txt" in move2_json["message"]
+
+    client.delete(f"/api/v1/documents/{file_id1}")
+    client.delete(f"/api/v1/documents/{file_id2}")

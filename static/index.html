@@ -566,7 +566,7 @@
     <!-- Multi-file Unconfirmed Work List Card -->
     <div class="card" style="margin-top: 2rem;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.8rem;">
-        <div class="section-title" style="margin-bottom: 0;"><span>📋</span> 다중파일 작업리스트 (미확인 작업 목록)</div>
+        <div class="section-title" style="margin-bottom: 0;"><span>📋</span> 미확인 작업 목록</div>
         <div style="display: flex; gap: 0.6rem;">
           <button class="btn-action btn-save" type="button" style="width: auto; margin-top: 0; padding: 0.55rem 1.1rem; font-size: 0.85rem;" onclick="batchConfirmWorkList()">
             💾 선택 항목 일괄 저장
@@ -751,8 +751,7 @@
     <div id="modalDetailContent" style="margin-bottom: 1.5rem;"></div>
 
     <div class="compact-actions">
-      <button class="btn-action btn-save" onclick="submitModalUpdate()">DB반영</button>
-      <button class="btn-action" onclick="submitModalMove()">경로변경</button>
+      <button class="btn-action btn-save" onclick="submitModalSave()">저장</button>
       <button class="btn-action btn-download" onclick="submitModalDownload()">다운로드</button>
       <button class="btn-action" style="background: linear-gradient(135deg, var(--accent-rose), #dc2626);" onclick="submitModalDelete()">파일삭제</button>
     </div>
@@ -1693,7 +1692,7 @@
     activeModalFileId = null;
   }
 
-  async function submitModalUpdate() {
+  async function submitModalSave() {
     if (!activeModalFileId) return;
 
     const rawOverview = document.getElementById('modalOverviewEdit').value;
@@ -1703,25 +1702,48 @@
     editedResults.summary_data.document_overview = overviewList;
     if (dept) editedResults.department = dept;
 
+    const newFolder = document.getElementById('modalFolderPath').value.trim();
+
     try {
-      const res = await fetch(`/api/v1/documents/${activeModalFileId}/results`, {
+      const resResults = await fetch(`/api/v1/documents/${activeModalFileId}/results`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(editedResults)
       });
-
-      const data = await res.json();
-      if (res.ok && data.success) {
-        alert('요약 내용 및 소속 부서가 DB에 성공적으로 수정되었습니다.');
-        closeModal();
-        await refreshDepartmentDropdown();
-        executeSearch();
-      } else {
-        alert(data.detail || '수정에 실패했습니다.');
+      const dataResults = await resResults.json();
+      if (!resResults.ok || !dataResults.success) {
+        alert(dataResults.detail || 'DB 내용 수정에 실패했습니다.');
+        return;
       }
+
+      let moveMsg = '';
+      if (newFolder) {
+        const resFolder = await fetch(`/api/v1/documents/${activeModalFileId}/folder`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ new_folder_path: newFolder })
+        });
+        const dataFolder = await resFolder.json();
+        if (resFolder.ok && dataFolder.success) {
+          moveMsg = dataFolder.message;
+        } else {
+          alert('저장 경로는 이동하지 못했습니다: ' + (dataFolder.detail || '오류'));
+        }
+      }
+
+      showToast(moveMsg || '문서 요약 및 아카이빙 저장이 완료되었습니다.');
+      closeModal();
+      await refreshDepartmentDropdown();
+      await loadUnconfirmedWorkList();
+      executeSearch();
+      refreshFolderTree();
     } catch (err) {
-      alert('DB 수정 에러: ' + err.message);
+      alert('저장 처리 중 에러: ' + err.message);
     }
+  }
+
+  async function submitModalUpdate() {
+    await submitModalSave();
   }
 
   function submitModalDownload() {
@@ -1730,28 +1752,7 @@
   }
 
   async function submitModalMove() {
-    if (!activeModalFileId) return;
-    const newFolder = document.getElementById('modalFolderPath').value.trim();
-    if (!newFolder) { alert('이동할 저장 경로를 입력해주세요.'); return; }
-    if (!confirm(`파일을 "${newFolder}" 경로로 이동합니다. 계속하시겠습니까?`)) return;
-
-    try {
-      const res = await fetch(`/api/v1/documents/${activeModalFileId}/folder`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ new_folder_path: newFolder })
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        alert(`✅ 파일이 이동되었습니다.\n경로: ${data.new_path}`);
-        closeModal();
-        executeSearch();
-      } else {
-        alert(data.detail || '파일 이동에 실패했습니다.');
-      }
-    } catch (err) {
-      alert('파일 이동 중 서버 오류: ' + err.message);
-    }
+    await submitModalSave();
   }
 
   async function loadFolderRecommend() {
@@ -2134,6 +2135,7 @@
           </td>
           <td style="padding: 0.6rem 0.5rem; text-align: center;">
             <div style="display:flex; gap:0.4rem; justify-content:center;">
+              <button class="btn-action" type="button" style="width:auto; margin:0; padding:0.35rem 0.65rem; font-size:0.78rem; background:#3b82f6;" onclick="showWorkItemDetail('${item.file_id}')">상세</button>
               <button class="btn-action btn-save" type="button" style="width:auto; margin:0; padding:0.35rem 0.65rem; font-size:0.78rem;" onclick="confirmSingleWorkItem('${item.file_id}')">저장</button>
               <button class="btn-action" type="button" style="width:auto; margin:0; padding:0.35rem 0.65rem; font-size:0.78rem; background:linear-gradient(135deg, var(--accent-rose), #dc2626);" onclick="deleteSingleWorkItem('${item.file_id}')">삭제</button>
             </div>
@@ -2143,6 +2145,26 @@
       });
     } catch (err) {
       console.error('Failed to load unconfirmed work list:', err);
+    }
+  }
+
+  async function showWorkItemDetail(fileId) {
+    try {
+      const res = await fetch(`/api/v1/documents/${fileId}/result`);
+      const resData = await readJsonResponse(res);
+      if (!res.ok || !resData.success) {
+        alert(resData.detail || '상세 요약 분석 결과를 불러올 수 없습니다.');
+        return;
+      }
+      currentFileId = fileId;
+      renderResult(resData.data);
+      switchTab('upload');
+      const resultSection = document.getElementById('resultSection');
+      if (resultSection) {
+        resultSection.scrollIntoView({ behavior: 'smooth' });
+      }
+    } catch (err) {
+      alert('상세 조회 중 오류 발생: ' + err.message);
     }
   }
 

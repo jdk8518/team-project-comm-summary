@@ -18,7 +18,7 @@
   - **수정 버튼 (`[✏️ 요약 수정하여 DB 반영]`)**: 요약 문구를 편집하여 DB 업데이트 (`PUT /api/v1/documents/{file_id}/summary`)
   - **다운로드 버튼 (`[📥 1-Click 원본 파일 다운로드]`)**: 보관된 원본 문서 바이너리 스트림 다운로드 (`GET /api/v1/documents/{file_id}/download`)
 
-> ⛔ **MVP 제외 사항 준수**: 로그인, 분석 이력 목록(전체 히스토리 뷰어 제외 단순 검색), 다중 문서 동시 업로드 제외.
+> **MVP 범위**: 단일 문서 분석·검토 저장과 다중 문서 자동 분석·보관을 지원합니다. 다중 문서 간 비교 분석, 사용자 권한 관리, 외부 시스템 연동은 제외합니다.
 
 ---
 
@@ -62,4 +62,8 @@ pytest tests/test_api.py
 
 `.env`에 `AI_PROVIDER`, `AI_API_KEY`, `AI_MODEL`을 설정합니다. `AI_PROVIDER`는 `openai`, `google`, `deepseek` 또는 테스트용 `mock`을 사용할 수 있습니다. 예시는 `.env.example`을 참고하세요.
 
+`ARCHIVE_ROOT`는 SQLite DB(`documents.db`), 원본 문서, 요약 Markdown을 저장할 루트 경로입니다. 새 환경에서는 `ARCHIVE_ROOT`만 설정하며, `FILE_STORAGE_ROOT`는 기존 설정 호환용 별칭입니다.
+
 HWP(v5) 텍스트 추출은 `docpler`의 `docpler.hwp.convert()`를 사용하고, HWPX는 `python-hwpx`를 사용합니다. HWP 변환 실패나 손상된 HWPX 컨테이너는 분석 전에 파싱 오류로 반환합니다.
+
+PDF에서 추출한 텍스트가 20자 미만이면 선택적 OCR 폴백을 시도합니다. OCR에는 `pytesseract` 패키지 외에 운영체제의 Tesseract 실행 파일과 한국어·영어 언어 데이터가 필요합니다. OCR을 사용할 수 없거나 결과가 부족하면 분석을 중단하고 텍스트 추출 오류를 안내합니다.

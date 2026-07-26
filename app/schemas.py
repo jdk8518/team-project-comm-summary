@@ -160,6 +160,7 @@ class DocumentInfo(BaseModel):
 class IntegratedResultData(BaseModel):
     file_id: str
     status: str
+    department: str = ""
     document_info: DocumentInfo
     archiving_info: ArchivingInfo
     analysis_data: AnalysisData
@@ -246,6 +247,17 @@ class FolderRecommendRequest(BaseModel):
     message: str = ""
     keywords: Dict[str, List[str]] = {}
     folders: List[str] = []
+
+class DepartmentRecommendRequest(BaseModel):
+    summary: List[str] = []
+    purpose: str = ""
+    message: str = ""
+    keywords: Dict[str, List[str]] = {}
+
+class DepartmentRecommendResponse(BaseModel):
+    success: bool = True
+    file_id: str
+    recommendations: List[str]
 
 # 9. Multi-file Work List & Batch Operations Schemas
 class UnconfirmedDocumentItem(BaseModel):
