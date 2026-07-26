@@ -423,6 +423,8 @@ def get_unconfirmed_documents() -> List[Dict[str, Any]]:
                     except Exception:
                         pass
 
+                file_missing = not check_document_file_exists(doc_id, doc)
+
                 results.append({
                     "file_id": doc_id,
                     "original_filename": doc.get("original_filename") or r["original_filename"] or "file.pdf",
@@ -431,6 +433,7 @@ def get_unconfirmed_documents() -> List[Dict[str, Any]]:
                     "department": doc.get("department") or r["department"] or "디지털혁신팀",
                     "one_line_summary": overview_text or "요약문이 생성되어 있습니다.",
                     "user_confirmed": False,
+                    "file_missing": file_missing,
                     "uploaded_at": doc.get("uploaded_at") or r["uploaded_at"] or datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 })
     except Exception as e:
@@ -490,7 +493,7 @@ def batch_delete_documents(file_ids: List[str]) -> Tuple[int, List[str]]:
     success_count = 0
     failed_ids = []
     for f_id in file_ids:
-        ok, _ = delete_document_from_db(f_id)
+        ok, _, _ = delete_document_from_db(f_id, force_db_only=True)
         if ok:
             success_count += 1
         else:
@@ -769,7 +772,20 @@ def update_summary_content(file_id: str, one_line_summary: Optional[str] = None,
 
 
 def get_document_by_id(file_id: str) -> Optional[Dict[str, Any]]:
-    return document_db.get(file_id)
+    if file_id in document_db:
+        return document_db[file_id]
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM documents WHERE file_id = ?", (file_id,))
+            row = cursor.fetchone()
+            if row:
+                record = dict(row)
+                document_db[file_id] = record
+                return record
+    except Exception as e:
+        print(f"Error fetching document by id from SQLite: {e}")
+    return None
 
 
 def get_document_file_bytes(file_id: str) -> Optional[Tuple[bytes, str]]:
@@ -792,27 +808,45 @@ def get_document_file_bytes(file_id: str) -> Optional[Tuple[bytes, str]]:
     return None
 
 
-def delete_document_from_db(file_id: str) -> Tuple[bool, str]:
-    """Delete document record from SQLite DB and remove archived/temp files from disk."""
-    if file_id not in document_db:
-        return False, "문서를 찾을 수 없습니다."
+def check_document_file_exists(file_id: str, doc: Optional[Dict[str, Any]] = None) -> bool:
+    """Check whether the document's original file physically exists on disk or in memory cache."""
+    if doc is None:
+        doc = document_db.get(file_id, {})
+    archived_path = doc.get("archived_path")
+    temp_file_path = doc.get("file_path")
+    has_archived = bool(archived_path and os.path.exists(archived_path))
+    has_temp = bool(temp_file_path and os.path.exists(temp_file_path))
+    has_memory = bool(file_id in document_files)
+    return has_archived or has_temp or has_memory
 
-    doc = document_db[file_id]
+
+def delete_document_from_db(file_id: str, force_db_only: bool = False) -> Tuple[bool, str, str]:
+    """
+    Delete document record from SQLite DB and remove archived/temp files from disk.
+    Returns (success, status_code, message).
+    """
+    doc = get_document_by_id(file_id)
+    if not doc:
+        return False, "NOT_FOUND", "문서를 찾을 수 없습니다."
+
+    archived_path = doc.get("archived_path")
+
+    if not check_document_file_exists(file_id, doc) and not force_db_only:
+        return False, "FILE_MISSING", "원본 파일이 존재하지 않습니다. DB 데이터(레코드)만 삭제하시겠습니까?"
 
     # 1. Remove archived file
-    archived_path = doc.get("archived_path")
     if archived_path and os.path.exists(archived_path):
         try:
             os.remove(archived_path)
         except Exception as e:
-            return False, f"아카이빙 파일 삭제 중 오류: {str(e)}"
+            return False, "ERROR", f"아카이빙 파일 삭제 중 오류: {str(e)}"
 
     summary_path = doc.get("summary_path") or (summary_markdown_path(archived_path) if archived_path else None)
     if summary_path and os.path.exists(summary_path):
         try:
             os.remove(summary_path)
         except Exception as e:
-            return False, f"요약 Markdown 삭제 중 오류: {str(e)}"
+            return False, "ERROR", f"요약 Markdown 삭제 중 오류: {str(e)}"
 
     # 2. Remove temporary uploaded file
     temp_file_path = doc.get("file_path")
@@ -827,7 +861,7 @@ def delete_document_from_db(file_id: str) -> Tuple[bool, str]:
     document_db.pop(file_id, None)
     document_files.pop(file_id, None)
 
-    return True, f"문서 {file_id} 가 성공적으로 삭제되었습니다."
+    return True, "SUCCESS", f"문서 {file_id} 가 성공적으로 삭제되었습니다."
 
 
 def move_document_file(

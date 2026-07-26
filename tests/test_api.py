@@ -603,3 +603,75 @@ def test_duplicate_filename_move_increments_sequence():
 
     client.delete(f"/api/v1/documents/{file_id1}")
     client.delete(f"/api/v1/documents/{file_id2}")
+
+
+def test_delete_document_file_missing_requires_force_db_only():
+    """원본 파일이 없는 경우 409 Conflict(file_missing=True)를 반환하고, force_db_only=true 승인 시 DB 삭제를 검증"""
+    import app.db
+    res = client.post(
+        "/api/v1/documents/analyze-auto",
+        files={"file": ("missing_file_test.txt", FULL_DOC_CONTENT, "text/plain")},
+    )
+    assert res.status_code == 200
+    file_id = res.json()["data"]["file_id"]
+
+    doc = app.db.get_document_by_id(file_id)
+    if doc:
+        if doc.get("archived_path") and os.path.exists(doc["archived_path"]):
+            os.remove(doc["archived_path"])
+        if doc.get("file_path") and os.path.exists(doc["file_path"]):
+            os.remove(doc["file_path"])
+    app.db.document_files.pop(file_id, None)
+
+    del_res = client.delete(f"/api/v1/documents/{file_id}")
+    assert del_res.status_code == 409
+    assert del_res.json()["file_missing"] is True
+
+    force_del_res = client.delete(f"/api/v1/documents/{file_id}?force_db_only=true")
+    assert force_del_res.status_code == 200
+    assert force_del_res.json()["success"] is True
+
+
+def test_unconfirmed_documents_file_missing_flag():
+    """미확인 작업 목록 조회 시 파일 미존재 항목의 file_missing=True 반환 검증"""
+    import app.db
+    res = client.post(
+        "/api/v1/documents/analyze-auto",
+        files={"file": ("unconfirmed_missing_test.txt", FULL_DOC_CONTENT, "text/plain")},
+    )
+    assert res.status_code == 200
+    file_id = res.json()["data"]["file_id"]
+
+    doc = app.db.get_document_by_id(file_id)
+    if doc:
+        if doc.get("archived_path") and os.path.exists(doc["archived_path"]):
+            os.remove(doc["archived_path"])
+        if doc.get("file_path") and os.path.exists(doc["file_path"]):
+            os.remove(doc["file_path"])
+    app.db.document_files.pop(file_id, None)
+
+    unconfirmed_res = client.get("/api/v1/documents/unconfirmed")
+    assert unconfirmed_res.status_code == 200
+    unconfirmed_items = unconfirmed_res.json()["data"]
+    target_item = next((item for item in unconfirmed_items if item["file_id"] == file_id), None)
+    assert target_item is not None
+    assert target_item["file_missing"] is True
+
+    client.delete(f"/api/v1/documents/{file_id}?force_db_only=true")
+
+
+def test_delete_document_from_db_when_not_in_memory_cache():
+    """서버 재시작 후 메모리 캐시(document_db)에 없고 SQLite DB에만 존재하는 문서의 삭제 성공 검증"""
+    import app.db
+    res = client.post(
+        "/api/v1/documents/analyze-auto",
+        files={"file": ("cache_missing_delete_test.txt", FULL_DOC_CONTENT, "text/plain")},
+    )
+    assert res.status_code == 200
+    file_id = res.json()["data"]["file_id"]
+
+    app.db.document_db.pop(file_id, None)
+
+    del_res = client.delete(f"/api/v1/documents/{file_id}")
+    assert del_res.status_code == 200
+    assert del_res.json()["success"] is True

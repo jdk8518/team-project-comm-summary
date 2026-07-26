@@ -9,7 +9,7 @@ import os
 import uuid
 from typing import Optional, List
 from fastapi import APIRouter, UploadFile, File, HTTPException, Query, Form
-from fastapi.responses import PlainTextResponse, StreamingResponse
+from fastapi.responses import PlainTextResponse, StreamingResponse, JSONResponse
 import io
 
 from app.schemas import (
@@ -362,15 +362,29 @@ async def view_summary_markdown(file_id: str):
     return PlainTextResponse(content, media_type="text/markdown", headers={"Content-Disposition": "inline"})
 
 @router.delete("/{file_id}", summary="DB 레코드 및 아카이빙 원본 파일 삭제 API")
-async def delete_document(file_id: str):
+async def delete_document(
+    file_id: str,
+    force_db_only: bool = Query(False, description="원본 파일 미존재 시 DB 데이터만 삭제 진행 여부")
+):
     """
     DB 레코드를 삭제하고 아카이빙된 원본 파일을 파일시스템에서 제거합니다.
-    삭제된 문서는 복구할 수 없습니다.
+    원본 파일이 없을 경우 force_db_only=true로 DB 데이터만 삭제할 수 있습니다.
     """
-    success, message = db.delete_document_from_db(file_id)
+    success, status_code, message = db.delete_document_from_db(file_id, force_db_only=force_db_only)
     if not success:
-        raise HTTPException(status_code=404, detail=message)
-    return {"success": True, "message": message, "file_id": file_id}
+        if status_code == "FILE_MISSING":
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "success": False,
+                    "file_missing": True,
+                    "file_id": file_id,
+                    "message": message,
+                    "detail": message,
+                }
+            )
+        raise HTTPException(status_code=404 if status_code == "NOT_FOUND" else 400, detail=message)
+    return {"success": True, "message": message, "file_id": file_id, "file_missing": False}
 
 @router.put("/{file_id}/folder", response_model=MoveFileResponse, summary="아카이빙 파일 저장 경로 이동 API")
 async def move_document_folder(file_id: str, req: MoveFileRequest):

@@ -268,6 +268,7 @@ class UnconfirmedDocumentItem(BaseModel):
     department: str = "디지털혁신팀"
     one_line_summary: str
     user_confirmed: bool = False
+    file_missing: bool = False
     uploaded_at: str
 
 class UnconfirmedListResponse(BaseModel):
