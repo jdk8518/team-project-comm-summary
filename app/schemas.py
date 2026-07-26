@@ -150,6 +150,9 @@ class ValidateResponse(BaseModel):
 class ArchivingInfo(BaseModel):
     recommended_folder: str = Field(..., description="추천 분류 폴더 경로")
     recommended_filename: str = Field(..., description="추천 재지정 파일명")
+    saved_folder: Optional[str] = Field(None, description="저장 폴더 경로")
+    recommended_department: Optional[str] = Field(None, description="추천 소속 부서")
+    department: Optional[str] = Field(None, description="소속 부서")
 
 class DocumentInfo(BaseModel):
     original_filename: str

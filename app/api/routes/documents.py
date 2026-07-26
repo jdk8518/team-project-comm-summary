@@ -41,17 +41,22 @@ async def database_health():
 @router.post("/analyze", response_model=IntegratedResultResponse, summary="문서 분석 통합 API (대시보드 UI 연동)")
 async def analyze_document(
     file: UploadFile = File(...),
-    department: Optional[str] = Form("디지털혁신팀")
+    department: Optional[str] = Form(None),
+    target_folder: Optional[str] = Form(None)
 ):
     """
     단일 문서(PDF, DOCX, TXT, HWP, HWPX, PPTX)를 수신하여
     텍스트 파싱 -> AI 구조 분석 -> AI 팩트 요약 -> AI 검증
     결과와 추천 폴더/파일명 아카이빙 정보를 통합 반환합니다.
+    - department가 공백이거나 '부서 추천'인 경우 AI가 부서를 추천하여 지정합니다.
     """
     file_bytes = await file.read()
     file_size = len(file_bytes)
     raw_filename = file.filename or "unknown.pdf"
     filename = os.path.basename(raw_filename.replace("\\", "/")) or "unknown.pdf"
+
+    raw_dept = (department or "").strip()
+    use_ai_dept = not raw_dept or raw_dept == "부서 추천"
 
     # 1. 3단계 유효성 검증
     format_str = validate_file_metadata(filename, file_size)
@@ -65,26 +70,34 @@ async def analyze_document(
     with open(temp_path, "wb") as f:
         f.write(file_bytes)
 
+    # 3. 텍스트 파싱
+    raw_cleaned_text = extract_text_from_file(file_bytes, format_str)
+    structured_content_dict = structure_text(raw_cleaned_text)
+
+    # 4. AI 문서 핵심 구조 분석 (기존 부서 목록 제공 → 추천 부서 3개 산출)
+    existing_departments = db.get_all_departments()
+    analysis_data = run_document_analysis(
+        file_id, raw_cleaned_text, structured_content_dict,
+        existing_departments=existing_departments
+    )
+
+    # 부서 결정
+    if use_ai_dept:
+        rec_depts = getattr(analysis_data, "recommended_departments", [])
+        final_dept = rec_depts[0] if (rec_depts and isinstance(rec_depts, list)) else "디지털혁신팀"
+    else:
+        final_dept = raw_dept
+
     db.store_uploaded_document(
         file_id=file_id,
         original_filename=filename,
         format_str=format_str,
         file_bytes=file_bytes,
         file_path=temp_path,
-        department=department or "디지털혁신팀"
+        department=final_dept
     )
 
-    # 3. 텍스트 파싱
-    raw_cleaned_text = extract_text_from_file(file_bytes, format_str)
-    structured_content_dict = structure_text(raw_cleaned_text)
     db.update_document_extracted(file_id, raw_cleaned_text, structured_content_dict)
-
-    # 4. AI 문서 핵심 구조 분석 (기존 부서 목록 제공 → 추천 부서 포함)
-    existing_departments = db.get_all_departments()
-    analysis_data = run_document_analysis(
-        file_id, raw_cleaned_text, structured_content_dict,
-        existing_departments=existing_departments
-    )
     db.update_document_analysis(file_id, analysis_data)
 
     # AI 폴더 추천은 현재 파일 저장 루트에 실제로 존재하는 폴더만 후보로 사용한다.
@@ -138,6 +151,7 @@ async def analyze_document(
             recommended_folder=doc_record["recommended_folder"],
             recommended_filename=doc_record["recommended_filename"]
         ),
+        department=final_dept,
         analysis_data=analysis_data,
         summary_data=summary_data.summary_result,
         verification_data=validation_data.validation_result
@@ -153,19 +167,35 @@ async def get_departments():
 @router.post("/analyze-auto", response_model=IntegratedResultResponse, summary="다중 파일 자동 분석 및 보관 API (user_confirmed = False)")
 async def analyze_document_auto(
     file: UploadFile = File(...),
-    department: Optional[str] = Form("디지털혁신팀")
+    department: Optional[str] = Form(None),
+    target_folder: Optional[str] = Form(None)
 ):
     """
     다중 파일 업로드 시 개별 문서를 수신하여
     분석/요약/검증을 완료한 후 사용자 개입 없이 바로 DB와 원본/Markdown 파일로 보관(user_confirmed=False)합니다.
+    - department가 공백이거나 '부서 추천'인 경우 AI가 부서를 추천
+    - target_folder가 공백이거나 '경로 추천'인 경우 AI가 경로를 추천
     """
-    res = await analyze_document(file, department=department)
+    raw_dept = (department or "").strip()
+    use_ai_dept = not raw_dept or raw_dept == "부서 추천"
+
+    raw_folder = (target_folder or "").strip()
+    use_ai_folder = not raw_folder or raw_folder == "경로 추천"
+
+    res = await analyze_document(file, department=None if use_ai_dept else raw_dept)
     file_id = res.data.file_id
     doc_record = db.get_document_by_id(file_id)
 
-    dept_str = (department or "").strip() or "디지털혁신팀"
-    rec_folder = doc_record.get("recommended_folder", f"output/archive/{dept_str}/")
-    rec_filename = doc_record.get("recommended_filename", doc_record.get("original_filename", "doc.pdf"))
+    final_dept = doc_record.get("department") if (use_ai_dept and doc_record) else (raw_dept or "디지털혁신팀")
+    if not final_dept or final_dept == "부서 추천":
+        final_dept = "디지털혁신팀"
+
+    if use_ai_folder:
+        rec_folder = (doc_record.get("recommended_folder") if doc_record else None) or f"output/archive/{final_dept}/"
+    else:
+        rec_folder = raw_folder
+
+    rec_filename = (doc_record.get("recommended_filename") if doc_record else None) or (doc_record.get("original_filename") if doc_record else "doc.pdf")
     overview = getattr(res.data.summary_data, "document_overview", ["자동 분석 요약"])
 
     db.archive_and_save_document(
@@ -173,13 +203,18 @@ async def analyze_document_auto(
         folder_path=rec_folder,
         filename=rec_filename,
         document_overview=overview,
-        department=dept_str,
+        department=final_dept,
     )
-    doc_record["user_confirmed"] = False
-    doc_record["department"] = dept_str
-    db.save_doc_to_sqlite(doc_record)
+    if doc_record:
+        doc_record["user_confirmed"] = False
+        doc_record["department"] = final_dept
+        doc_record["saved_folder"] = rec_folder
+        db.save_doc_to_sqlite(doc_record)
 
-    res.data.status = "SAVED"
+    if res.data.archiving_info:
+        res.data.archiving_info.recommended_folder = rec_folder
+        res.data.archiving_info.saved_folder = rec_folder
+        res.data.archiving_info.department = final_dept
     return res
 
 @router.get("/unconfirmed", response_model=UnconfirmedListResponse, summary="미확인 다중파일 작업 리스트 조회 API")
@@ -283,31 +318,54 @@ async def get_document_result(file_id: str):
     if not doc:
         raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다.")
 
-    size_formatted = f"{doc['size_bytes'] / (1024*1024):.1f} MB" if doc['size_bytes'] >= 1024*1024 else f"{doc['size_bytes'] / 1024:.1f} KB"
-    analysis = doc.get("analysis_data") or run_document_analysis(file_id, doc.get("raw_text", ""), doc.get("structured_content", {}))
-    summary_data_obj = doc.get("summary_data") or run_document_summarization(file_id, doc.get("raw_text", ""), analysis)
-    validation = doc.get("validation_data") or run_document_validation(file_id, doc.get("raw_text", ""), analysis, summary_data_obj)
+    try:
+        size_bytes = doc.get("size_bytes") or 0
+        if size_bytes >= 1024 * 1024:
+            size_formatted = f"{size_bytes / (1024*1024):.1f} MB"
+        else:
+            size_formatted = f"{size_bytes / 1024:.1f} KB"
 
-    integrated_data = IntegratedResultData(
-        file_id=file_id,
-        status=doc.get("status", "COMPLETED"),
-        document_info=DocumentInfo(
-            original_filename=doc["original_filename"],
-            format=doc["format"],
-            size_formatted=size_formatted,
-            uploaded_at=doc["uploaded_at"]
-        ),
-        archiving_info=ArchivingInfo(
-            recommended_folder=doc.get("saved_folder") or doc.get("recommended_folder") or "output/archive/디지털혁신팀/",
-            recommended_filename=doc.get("saved_filename") or doc.get("recommended_filename") or doc.get("original_filename") or "document"
-        ),
-        department=doc.get("department") or "",
-        analysis_data=analysis,
-        summary_data=summary_data_obj.summary_result,
-        verification_data=validation.validation_result
-    )
+        analysis = doc.get("analysis_data") or run_document_analysis(file_id, doc.get("raw_text", ""), doc.get("structured_content", {}))
+        summary_data_obj = doc.get("summary_data") or run_document_summarization(file_id, doc.get("raw_text", ""), analysis)
+        validation = doc.get("validation_data") or run_document_validation(file_id, doc.get("raw_text", ""), analysis, summary_data_obj)
 
-    return IntegratedResultResponse(success=True, data=integrated_data)
+        summary_res = getattr(summary_data_obj, "summary_result", summary_data_obj) if summary_data_obj else None
+        if isinstance(summary_res, dict):
+            try:
+                summary_res = SummaryResult(**summary_res)
+            except Exception:
+                pass
+
+        val_res = getattr(validation, "validation_result", validation) if validation else None
+        if isinstance(val_res, dict):
+            try:
+                val_res = ValidationResult(**val_res)
+            except Exception:
+                pass
+
+        integrated_data = IntegratedResultData(
+            file_id=file_id,
+            status=doc.get("status", "COMPLETED"),
+            document_info=DocumentInfo(
+                original_filename=doc.get("original_filename") or "document.pdf",
+                format=doc.get("format") or "PDF",
+                size_formatted=size_formatted,
+                uploaded_at=doc.get("uploaded_at") or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            ),
+            archiving_info=ArchivingInfo(
+                recommended_folder=doc.get("saved_folder") or doc.get("recommended_folder") or "output/archive/디지털혁신팀/",
+                recommended_filename=doc.get("saved_filename") or doc.get("recommended_filename") or doc.get("original_filename") or "document"
+            ),
+            department=doc.get("department") or "",
+            analysis_data=analysis,
+            summary_data=summary_res,
+            verification_data=val_res
+        )
+
+        return IntegratedResultResponse(success=True, data=integrated_data)
+    except Exception as e:
+        print(f"Error in get_document_result for {file_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"문서 상세 결과 생성 중 오류가 발생했습니다: {str(e)}")
 
 @router.put("/{file_id}/summary", summary="요약 내용 수정 API")
 async def update_summary(file_id: str, req: SummaryUpdateRequest):
@@ -422,55 +480,81 @@ async def move_document_folder(file_id: str, req: MoveFileRequest):
     )
 
 @router.get("/{file_id}/recommend-folder", response_model=FolderRecommendResponse, summary="요약 기반 저장 경로 추천 API")
-async def recommend_document_folder(file_id: str):
-    """
-    저장된 요약 키워드를 바탕으로 output/archive/ 하위 실존 폴더 중
-    가장 근접한 경로를 상위 3개 추천합니다.
-    """
-    doc = db.get_document_by_id(file_id)
-    if not doc:
-        raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다.")
-
-    analysis = doc.get("analysis_data")
-    keywords: list[str] = [doc.get("department", "")]
-    if analysis and hasattr(analysis, "key_keywords"):
-        kw = analysis.key_keywords
-        keywords += kw.organizations + kw.concepts
-
-    existing_folders = db.get_existing_archive_folders()
-    recommendations = recommend_folder(existing_folders, keywords)
-
-    return FolderRecommendResponse(
-        success=True,
-        file_id=file_id,
-        recommendations=[FolderRecommendItem(**r) for r in recommendations],
-    )
-
 @router.post("/{file_id}/recommend-folder", response_model=FolderRecommendResponse, summary="수정 결과 기반 저장 경로 추천 API")
-async def recommend_document_folder_from_edits(file_id: str, req: FolderRecommendRequest):
+async def recommend_document_folder_api(file_id: str, req: Optional[FolderRecommendRequest] = None):
     doc = db.get_document_by_id(file_id)
     if not doc:
         raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다.")
-    folders = req.folders or db.get_existing_archive_folders()
-    keywords = [*req.summary, req.purpose, req.message]
-    for values in req.keywords.values():
-        keywords.extend(values or [])
+
+    folders = (req.folders if req and req.folders else None) or db.get_existing_archive_folders()
+
+    if req:
+        keywords = [*req.summary, req.purpose, req.message]
+        for values in (req.keywords or {}).values():
+            keywords.extend(values or [])
+    else:
+        sdata = doc.get("summary_data") or {}
+        if hasattr(sdata, "document_overview"):
+            overview = getattr(sdata, "document_overview", [])
+            purpose = getattr(sdata, "document_purpose", "")
+            message = getattr(sdata, "conclusion_or_core_message", "")
+        elif isinstance(sdata, dict):
+            overview = sdata.get("document_overview", [])
+            purpose = sdata.get("document_purpose", "")
+            message = sdata.get("conclusion_or_core_message", "")
+        else:
+            overview, purpose, message = [], "", ""
+        keywords = [*overview, purpose, message, doc.get("department", "")]
+
     recommendations = recommend_folder(folders, keywords)
     return FolderRecommendResponse(
         success=True,
         file_id=file_id,
-        recommendations=[FolderRecommendItem(**item) for item in recommendations],
+        recommendations=[FolderRecommendItem(**item) for item in recommendations[:3]],
     )
 
 
-@router.post("/{file_id}/recommend-department", response_model=DepartmentRecommendResponse, summary="요약 기반 소속 부서 추천 API")
-async def recommend_document_department(file_id: str, req: DepartmentRecommendRequest):
-    if not db.get_document_by_id(file_id):
+@router.get("/{file_id}/recommend-department", response_model=DepartmentRecommendResponse, summary="소속 부서 추천 API (GET)")
+@router.post("/{file_id}/recommend-department", response_model=DepartmentRecommendResponse, summary="요약 기반 소속 부서 추천 API (POST)")
+async def recommend_document_department_api(file_id: str, req: Optional[DepartmentRecommendRequest] = None):
+    doc = db.get_document_by_id(file_id)
+    if not doc:
         raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다.")
-    recommendations = recommend_department(
-        db.get_all_departments(), req.summary, req.purpose, req.message, req.keywords
-    )
-    return DepartmentRecommendResponse(success=True, file_id=file_id, recommendations=recommendations)
+
+    all_depts = db.get_all_departments()
+
+    if req:
+        summary = req.summary
+        purpose = req.purpose
+        message = req.message
+        keywords = req.keywords or {}
+    else:
+        sdata = doc.get("summary_data") or {}
+        if hasattr(sdata, "document_overview"):
+            summary = getattr(sdata, "document_overview", [])
+            purpose = getattr(sdata, "document_purpose", "")
+            message = getattr(sdata, "conclusion_or_core_message", "")
+        elif isinstance(sdata, dict):
+            summary = sdata.get("document_overview", [])
+            purpose = sdata.get("document_purpose", "")
+            message = sdata.get("conclusion_or_core_message", "")
+        else:
+            summary, purpose, message = [], "", ""
+
+        adata = doc.get("analysis_data") or {}
+        keywords = {}
+        if hasattr(adata, "key_keywords") and adata.key_keywords:
+            kw = adata.key_keywords
+            keywords = {
+                "persons": getattr(kw, "persons", []),
+                "organizations": getattr(kw, "organizations", []),
+                "schedules": getattr(kw, "schedules", []),
+                "metrics": getattr(kw, "metrics", []),
+                "concepts": getattr(kw, "concepts", []),
+            }
+
+    recommendations = recommend_department(all_depts, summary, purpose, message, keywords)
+    return DepartmentRecommendResponse(success=True, file_id=file_id, recommendations=recommendations[:3])
 
 # Alias routes
 @router.post("/api/documents/analyze", response_model=IntegratedResultResponse, include_in_schema=False)

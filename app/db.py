@@ -425,12 +425,22 @@ def get_unconfirmed_documents() -> List[Dict[str, Any]]:
 
                 file_missing = not check_document_file_exists(doc_id, doc)
 
+                raw_dept = doc.get("department") or r["department"] or ""
+                # '부서 추천' 또는 공백인 경우 AI 추천 부서 1순위로 대체
+                if not raw_dept or raw_dept.strip() == "부서 추천":
+                    analysis_obj = doc.get("analysis_data")
+                    rec_depts = getattr(analysis_obj, "recommended_departments", []) if analysis_obj else []
+                    if not rec_depts and isinstance(analysis_obj, dict):
+                        rec_depts = analysis_obj.get("recommended_departments", [])
+                    raw_dept = rec_depts[0] if (rec_depts and isinstance(rec_depts, list) and rec_depts[0]) else "디지털혁신팀"
+                final_department = raw_dept
+
                 results.append({
                     "file_id": doc_id,
                     "original_filename": doc.get("original_filename") or r["original_filename"] or "file.pdf",
                     "renamed_filename": doc.get("saved_filename") or doc.get("recommended_filename") or doc.get("original_filename") or "document",
-                    "saved_folder": doc.get("saved_folder") or doc.get("recommended_folder", f"output/archive/{doc.get('department', '디지털혁신팀')}/"),
-                    "department": doc.get("department") or r["department"] or "디지털혁신팀",
+                    "saved_folder": doc.get("saved_folder") or doc.get("recommended_folder", f"output/archive/{final_department}/"),
+                    "department": final_department,
                     "one_line_summary": overview_text or "요약문이 생성되어 있습니다.",
                     "user_confirmed": False,
                     "file_missing": file_missing,
