@@ -2,7 +2,7 @@
 
 ## 1. 프로젝트 개요
 
-- 프로젝트명:AI Agent를 활용한 회의록, 업무보고, 공문자료 등을 이용한  문서 분석 시스템 구축 
+- 프로젝트명:AI Agent를 활용한 회의록, 업무보고, 공문자료 등을 이용한  문서 분석 시스템 구축
 - 프로젝트 목적:문서를 업로드하면 AI가 핵심 내용을 요약하고 검증 결과를 제공한다.
 - 주요 기술: Language: Python 3
             Backend: FastAPI
@@ -13,6 +13,7 @@
 - 요구사항 문서: `./docs/requirements.md`
 - 기능 분해 문서: `./docs/function-breakdown.md`
 - MVP 계획 문서: `./docs/MVP-plan.md`
+- walkthrough 문서 : `./walkthrough/SKILL.md`
 
 ## 2. 작업 시작 순서
 
@@ -21,9 +22,10 @@
 3. `./docs/requirements.md`를 읽는다.
 4. `./docs/function-breakdown.md`를 읽는다.
 5. `./docs/MVP-plan.md`를 읽는다.
-6. 현재 브랜치와 `git status`를 확인한다.
-7. 담당 기능과 관련된 코드와 테스트를 확인한다.
-8. 변경할 파일과 구현 계획을 제시한다.
+6. `./walkthrough/SKILL.md`를 읽는다.
+7. 현재 브랜치와 `git status`를 확인한다.
+8. 담당 기능과 관련된 코드와 테스트를 확인한다.
+9. 변경할 파일과 구현 계획을 제시한다.
 
 ## 3. 작업 범위
 
@@ -68,6 +70,7 @@
 - 다른 기능과 연결할 부분
 - 공통 구조에 미치는 영향
 - 남아 있는 문제
+
 ## 8. 외부 문서 처리: HWPX
 
 HWPX 읽기, 수정, 생성, 검증 기능은 [`python-hwpx`](https://github.com/airmang/python-hwpx)를 사용해 구현합니다. Python 3.10 이상에서 `pip install python-hwpx`로 설치하고, 의존성은 프로젝트의 `requirements.txt` 또는 `pyproject.toml`과 잠금 파일에 명시합니다. 외부 라이브러리의 소스 코드를 이 저장소에 복사하지 않습니다.
