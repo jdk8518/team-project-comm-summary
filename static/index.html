@@ -1,0 +1,2419 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI 문서 분석 & 아카이빙 시스템</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #0f172a;
+      --card-bg: rgba(30, 41, 59, 0.7);
+      --card-border: rgba(255, 255, 255, 0.1);
+      --accent-blue: #3b82f6;
+      --accent-purple: #8b5cf6;
+      --accent-emerald: #10b981;
+      --accent-amber: #f59e0b;
+      --accent-rose: #ef4444;
+      --text-main: #f8fafc;
+      --text-sub: #94a3b8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      background-image: 
+        radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.15) 0px, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(139, 92, 246, 0.15) 0px, transparent 50%);
+      color: var(--text-main);
+      min-height: 100vh;
+      padding: 1.5rem 2rem;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 100%;
+      margin: 0 auto;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 1.5rem;
+    }
+
+    header h1 {
+      font-size: 2.2rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, #60a5fa, #a78bfa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 0.5rem;
+    }
+
+    header p {
+      color: var(--text-sub);
+      font-size: 1rem;
+    }
+
+    /* Navigation Tabs Header */
+    .nav-tabs {
+      display: flex;
+      justify-content: center;
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+
+    .tab-btn {
+      padding: 0.8rem 2rem;
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      background: rgba(30, 41, 59, 0.5);
+      color: var(--text-sub);
+      font-size: 1.05rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      backdrop-filter: blur(10px);
+    }
+
+    .tab-btn.active {
+      background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+      color: white;
+      border-color: transparent;
+      box-shadow: 0 4px 20px rgba(59, 130, 246, 0.3);
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    /* Glass Card Base */
+    .card {
+      background: var(--card-bg);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 1.8rem;
+      margin-bottom: 1.5rem;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+    }
+
+    .dropzone {
+      border: 2px dashed rgba(99, 102, 241, 0.4);
+      border-radius: 12px;
+      padding: 2.5rem 1rem;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      background: rgba(15, 23, 42, 0.4);
+    }
+
+    .dropzone:hover, .dropzone.dragover {
+      border-color: var(--accent-blue);
+      background: rgba(59, 130, 246, 0.05);
+    }
+
+    .btn-action {
+      width: 100%;
+      margin-top: 1.2rem;
+      padding: 1rem;
+      background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+      color: white;
+      font-weight: 600;
+      font-size: 1.05rem;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: transform 0.2s, opacity 0.2s;
+    }
+
+    .btn-save { background: linear-gradient(135deg, var(--accent-emerald), #059669); }
+    .btn-download { background: linear-gradient(135deg, var(--accent-amber), #d97706); }
+
+    .btn-action:hover {
+      opacity: 0.95;
+      transform: translateY(-2px);
+    }
+
+    .btn-action:disabled {
+      background: #475569;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .loading-container {
+      display: none;
+      text-align: center;
+      padding: 2.5rem 1rem;
+    }
+
+    .spinner {
+      width: 48px;
+      height: 48px;
+      border: 4px solid rgba(255, 255, 255, 0.1);
+      border-left-color: var(--accent-blue);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 1.2rem auto;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .error-card {
+      display: none;
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .error-card h3 { color: var(--accent-rose); font-size: 1.2rem; margin-bottom: 0.5rem; }
+    .ai-error-card { border: 1px solid rgba(248, 113, 113, 0.55); background: rgba(127, 29, 29, 0.22); color: #fecaca; padding: 0.85rem 1rem; border-radius: 8px; margin-bottom: 1rem; }
+
+    .btn-retry {
+      margin-top: 1rem;
+      padding: 0.6rem 1.2rem;
+      background: var(--accent-rose);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .toast-success {
+      display: none;
+      background: rgba(16, 185, 129, 0.2);
+      border: 1px solid rgba(16, 185, 129, 0.4);
+      color: #34d399;
+      padding: 1rem 1.5rem;
+      border-radius: 10px;
+      margin-bottom: 1.5rem;
+      font-weight: 600;
+      text-align: center;
+    }
+
+    .result-section { display: none; }
+
+    .section-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      color: #e2e8f0;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 0.35rem 0.8rem;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+
+    .badge-format { background: rgba(59, 130, 246, 0.2); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3); }
+    .badge-status { background: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
+    .badge-passed { background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
+
+    .pill-group { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; }
+    .pill {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 0.3rem 0.75rem;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      color: #cbd5e1;
+    }
+
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+    }
+
+    .info-item {
+      background: rgba(15, 23, 42, 0.5);
+      padding: 1rem;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .info-item label { display: block; font-size: 0.8rem; color: var(--text-sub); margin-bottom: 0.3rem; }
+
+    .form-input, .form-textarea, .form-select {
+      width: 100%;
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: var(--text-main);
+      padding: 0.7rem 0.9rem;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      margin-top: 0.3rem;
+    }
+
+    .form-input:focus, .form-textarea:focus, .form-select:focus {
+      outline: none;
+      border-color: var(--accent-blue);
+    }
+
+    ul { list-style-type: none; }
+    li {
+      margin-bottom: 0.6rem;
+      position: relative;
+      padding-left: 1.2rem;
+      color: #cbd5e1;
+      line-height: 1.5;
+    }
+    li::before { content: "•"; color: var(--accent-blue); font-weight: bold; position: absolute; left: 0; }
+
+    .issue-box {
+      background: rgba(15, 23, 42, 0.6);
+      border-left: 4px solid var(--accent-amber);
+      padding: 1rem;
+      border-radius: 0 8px 8px 0;
+      margin-bottom: 0.8rem;
+    }
+
+    .issue-box h4 { font-size: 0.95rem; color: #fbbf24; margin-bottom: 0.4rem; }
+    .issue-box p { font-size: 0.88rem; color: #94a3b8; margin-bottom: 0.4rem; }
+
+    .evidence-quote {
+      font-size: 0.82rem;
+      background: rgba(0, 0, 0, 0.25);
+      padding: 0.5rem;
+      border-radius: 6px;
+      color: #cbd5e1;
+      font-style: italic;
+    }
+
+    .chk-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.8rem;
+      padding: 0.8rem;
+      background: rgba(15, 23, 42, 0.4);
+      border-radius: 8px;
+      margin-bottom: 0.5rem;
+    }
+    .chk-item input { margin-top: 0.2rem; accent-color: var(--accent-purple); }
+
+    /* Search Tab Specific UI */
+    .search-bar {
+      display: flex;
+      gap: 0.8rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .search-layout { display: grid; grid-template-columns: minmax(220px, 270px) minmax(0, 1fr); gap: 1.25rem; }
+    .folder-tree-panel, .search-detail-panel { border-right: 1px solid var(--card-border); padding-right: 1rem; min-height: 280px; }
+    .search-detail-panel { display:none; }
+    .folder-tree-node { margin: 0.15rem 0; }
+    .folder-tree-row { display:flex; align-items:center; gap:0.35rem; width:100%; padding:0.38rem 0.45rem; color:var(--text-sub); background:transparent; border:0; border-radius:6px; text-align:left; cursor:pointer; }
+    .folder-tree-row:hover, .folder-tree-row.selected { color:#f1f5f9; background:rgba(96, 165, 250, 0.15); }
+    .folder-tree-children { margin-left:1rem; padding-left:0.45rem; border-left:1px solid rgba(148, 163, 184, 0.2); }
+    .selected-folder-label { color:var(--accent-blue); font-size:0.82rem; min-height:1.2rem; margin:-0.8rem 0 0.9rem; }
+    .search-card-item.selected { border-color: var(--accent-blue); background: rgba(96, 165, 250, 0.14); }
+    .detail-empty { color: var(--text-sub); font-size: 0.9rem; padding: 1rem 0; }
+    .detail-actions { display:flex; gap:0.6rem; flex-wrap:wrap; margin-top:1rem; }
+    .detail-actions .btn-action { width:auto; margin-top:0; padding:0.65rem 0.85rem; font-size:0.82rem; }
+    .search-card-actions { display:flex; gap:0.45rem; margin-top:0.8rem; padding-top:0.75rem; border-top:1px solid rgba(148, 163, 184, 0.16); align-items:center; }
+    .search-card-actions button { border:1px solid rgba(148, 163, 184, 0.3); border-radius:6px; padding:0.38rem 0.7rem; color:#e2e8f0; background:rgba(51, 65, 85, 0.7); cursor:pointer; font-size:0.78rem; }
+    .search-card-actions button:hover { background:rgba(96, 165, 250, 0.24); border-color:var(--accent-blue); }
+    .search-card-actions button.btn-delete-action { margin-left:auto; color:#f87171; border-color:rgba(239,68,68,0.4); background:rgba(239,68,68,0.15); }
+    .search-card-actions button.btn-delete-action:hover { background:rgba(239,68,68,0.3); border-color:#ef4444; }
+    .markdown-viewer-content { max-height: 68vh; overflow:auto; color:#e2e8f0; line-height:1.7; }
+    .markdown-viewer-content h1, .markdown-viewer-content h2, .markdown-viewer-content h3 { color:#93c5fd; margin:1rem 0 0.5rem; }
+    .markdown-viewer-content p { margin:0.45rem 0; }
+    .markdown-viewer-content ul, .markdown-viewer-content ol { margin:0.4rem 0 0.8rem 1.4rem; }
+    .markdown-viewer-content blockquote { margin:0.7rem 0; padding:0.45rem 0.8rem; border-left:3px solid #60a5fa; color:#cbd5e1; background:rgba(30,41,59,0.5); }
+    .markdown-viewer-content code { padding:0.1rem 0.3rem; border-radius:4px; background:rgba(15,23,42,0.8); color:#fbbf24; }
+    .markdown-viewer-overlay { padding:0; background:var(--bg-dark); backdrop-filter:none; align-items:stretch; }
+    .markdown-viewer-shell { display:flex; flex-direction:column; width:100%; max-width:none; height:100vh; max-height:none; border:0; border-radius:0; }
+    .markdown-viewer-shell .markdown-viewer-content { flex:1; max-height:none; padding:1.5rem 2rem; }
+    .markdown-viewer-header { display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:1rem 1.4rem; border-bottom:1px solid var(--card-border); background:rgba(15,23,42,0.96); }
+    .markdown-viewer-header-actions { display:flex; gap:0.5rem; }
+    .markdown-viewer-header-actions button { margin:0; width:auto; padding:0.5rem 0.8rem; font-size:0.82rem; }
+    .compact-actions { display:flex; gap:0.45rem; flex-wrap:wrap; }
+    .compact-actions .btn-action { width:auto; margin-top:0; padding:0.4rem 0.65rem; font-size:0.76rem; }
+    @media (max-width: 1040px) { .search-layout { grid-template-columns:minmax(210px, 260px) minmax(0, 1fr); } }
+    @media (max-width: 760px) { .search-bar { flex-direction:column; } .search-layout { grid-template-columns:1fr; } .folder-tree-panel { border-right:0; border-bottom:1px solid var(--card-border); padding:0 0 1rem; } }
+
+    .search-card-item {
+      background: rgba(30, 41, 59, 0.5);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 1.2rem;
+      margin-bottom: 1rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .search-card-item:hover {
+      border-color: var(--accent-blue);
+      transform: translateY(-2px);
+      background: rgba(30, 41, 59, 0.8);
+    }
+
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(8px);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+
+    .modal-content {
+      background: var(--bg-dark);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      max-width: 900px;
+      width: 100%;
+      max-height: 90vh;
+      overflow-y: auto;
+      padding: 2rem;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <h1>AI 문서 분석 & DB 아카이빙 시스템</h1>
+    <p>문서 분석·요약·검증 저장부터 DB 다각도 검색 및 원본 1-Click 다운로드를 제공합니다.</p>
+  </header>
+
+  <!-- Top Navigation Tabs -->
+  <div class="nav-tabs">
+    <button class="tab-btn active" id="tabUploadBtn" onclick="window.location.href='/'">📤 파일업로드</button>
+    <button class="tab-btn" id="tabSearchBtn" onclick="switchTab('search')">🔍 파일검색</button>
+  </div>
+
+  <!-- Toast Notification -->
+  <div class="toast-success" id="toastSuccess">
+    ✨ <span id="toastMessage">작업이 성공적으로 처리되었습니다.</span>
+  </div>
+
+  <!-- ================================================================= -->
+  <!-- TAB 1: 파일업로드 & 분석/저장 (File Upload Tab)                   -->
+  <!-- ================================================================= -->
+  <div class="tab-content active" id="tabUpload">
+    <!-- Upload Card -->
+    <div class="card">
+      <div style="margin-bottom: 1.2rem; display: flex; align-items: center; gap: 1.5rem; flex-wrap: wrap;">
+        <div style="display: flex; align-items: center; gap: 0.5rem; min-width: 280px; flex: 1;">
+          <label for="uploadDepartmentInput" style="font-size: 0.88rem; color: var(--text-main); font-weight: 600; white-space: nowrap;">🏢 소속 부서:</label>
+          <input type="text" id="uploadDepartmentInput" class="form-input" value="부서 추천" placeholder="부서 추천 또는 직접 입력" style="margin-top:0; padding: 0.45rem 0.75rem; font-size: 0.88rem;">
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.5rem; min-width: 280px; flex: 1;">
+          <label for="uploadFolderInput" style="font-size: 0.88rem; color: var(--text-main); font-weight: 600; white-space: nowrap;">📁 저장 경로:</label>
+          <input type="text" id="uploadFolderInput" class="form-input" value="경로 추천" placeholder="경로 추천 또는 직접 입력" style="margin-top:0; padding: 0.45rem 0.75rem; font-size: 0.88rem;">
+        </div>
+      </div>
+
+      <div class="dropzone" id="dropzone">
+        <div class="dropzone-icon" style="font-size: 2.5rem;">📁</div>
+        <p style="font-weight: 600; font-size: 1.05rem; margin-bottom: 0.4rem;">분석할 문서 파일(들) 또는 폴더를 드래그하거나 선택하세요</p>
+        <p style="font-size: 0.85rem; color: var(--text-sub); margin-bottom: 1.2rem;">지원 포맷: PDF, DOCX, TXT, HWP, HWPX, PPTX (최대 50MB)</p>
+        
+        <div style="display: flex; gap: 0.8rem; justify-content: center; flex-wrap: wrap;">
+          <button class="btn-action" type="button" style="width: auto; padding: 0.65rem 1.4rem; margin: 0; font-size: 0.9rem;" onclick="document.getElementById('fileInput').click(); event.stopPropagation();">
+            📄 파일(들) 선택
+          </button>
+          <button class="btn-action" type="button" style="width: auto; padding: 0.65rem 1.4rem; margin: 0; font-size: 0.9rem; background: linear-gradient(135deg, var(--accent-purple), #7c3aed);" onclick="document.getElementById('folderInput').click(); event.stopPropagation();">
+            📁 폴더 전체 선택 업로드
+          </button>
+        </div>
+
+        <input type="file" id="fileInput" style="display: none" accept=".pdf,.docx,.txt,.hwp,.hwpx,.pptx" multiple onchange="handleBatchFileSelect(this.files)">
+        <input type="file" id="folderInput" style="display: none" webkitdirectory directory multiple onchange="handleBatchFileSelect(this.files)">
+      </div>
+      <div id="fileSelectedInfo" style="display: none; margin-top: 1rem; color: var(--accent-blue); font-weight: 500;"></div>
+      <button class="btn-action" id="btnAnalyze" style="display:none;" disabled onclick="submitAnalysis()">AI 문서 분석 요청</button>
+    </div>
+
+    <!-- Loading Indicator -->
+    <div class="card loading-container" id="loadingState">
+      <div class="spinner"></div>
+      <h3 style="font-size: 1.2rem; margin-bottom: 0.4rem;">AI 문서 파이프라인 분석 진행 중...</h3>
+      <p style="color: var(--text-sub); font-size: 0.9rem;">유효성 검증 ➔ 텍스트 파싱 ➔ AI 구조 분석 ➔ 요약 및 검증 산출 중입니다.</p>
+    </div>
+
+    <!-- Error Card -->
+    <div class="error-card" id="errorState">
+      <h3>⚠️ 분석 처리 중 오류 발생</h3>
+      <p id="errorMessage" style="color: #fca5a5; font-size: 0.95rem; margin-top: 0.4rem;"></p>
+      <button class="btn-retry" onclick="resetForm()">다시 시도하기</button>
+    </div>
+
+    <!-- Result Section -->
+    <div class="result-section" id="resultSection">
+      
+      <!-- 1. 문서 기본 정보 Card -->
+      <div class="card">
+        <div class="section-title"><span>📌</span> 문서 기본 정보</div>
+        <div class="info-grid">
+          <div class="info-item"><label>원본파일명</label><span id="resFilename">-</span></div>
+          <div class="info-item"><label>문서 포맷</label><span class="badge badge-format" id="resFormat">-</span></div>
+          <div class="info-item"><label>파일 크기</label><span id="resSize">-</span></div>
+          <div class="info-item"><label>업로드 일시</label><span id="resUploadedAt">-</span></div>
+        </div>
+      </div>
+
+      <!-- 2. 추천 폴더 및 파일명 수정 Card -->
+      <div class="card">
+        <div class="section-title"><span>📁</span> 추천 아카이빙 경로 및 파일명 (수정 가능)</div>
+        <div style="margin-bottom: 1rem;">
+          <label style="font-size: 0.85rem; color: var(--text-sub);">추천 저장 폴더 경로</label>
+          <div style="display:flex; gap:0.5rem; align-items:center;">
+            <input type="text" class="form-input" id="editFolder" placeholder="예: archive/디지털혁신팀/" style="margin-top:0; flex:1;">
+            <button class="btn-action" style="width:auto; margin-top:0; padding:0.45rem 0.7rem; font-size:0.78rem;" onclick="loadUploadFolderRecommend()">추천경로</button>
+          </div>
+          <div id="uploadFolderRecommendList" style="margin-top:0.5rem;"></div>
+        </div>
+        <div style="margin-bottom: 1rem;">
+          <label style="font-size: 0.85rem; color: var(--text-sub);">소속 부서 (수정 가능)</label>
+          <div style="display:flex; gap:0.5rem; align-items:center; margin-top:0.2rem; position:relative;">
+            <input type="text" class="form-input" id="editDepartment" placeholder="예: 디지털혁신팀" style="margin-top:0; flex:1;">
+            <div style="position:relative;">
+              <button
+                id="btnAiDeptRecommend"
+                class="btn-action"
+                style="width:auto; margin-top:0; padding:0.45rem 0.8rem; font-size:0.78rem; white-space:nowrap; display:none;"
+                onclick="toggleAiDeptDropdown(event)"
+              >🤖 AI 추천 부서 ▼</button>
+              <div
+                id="aiDeptDropdown"
+                style="display:none; position:absolute; right:0; top:calc(100% + 4px); min-width:200px; background:var(--card-bg,#1e2a3a); border:1px solid var(--border,#334); border-radius:8px; box-shadow:0 4px 16px rgba(0,0,0,0.4); z-index:200; overflow:hidden;"
+              ></div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <label style="font-size: 0.85rem; color: var(--text-sub);">추천 재지정 파일명</label>
+          <input type="text" class="form-input" id="editFilename" readonly placeholder="YYYY-MM-DD_원본파일명(순번).확장자">
+        </div>
+      </div>
+
+      <!-- 3. 핵심 요약 및 수정 Card -->
+      <div class="card">
+        <div class="section-title"><span>📝</span> 핵심 요약 리포트 (수정 가능)</div>
+        
+        <div style="margin-bottom: 1.2rem;">
+          <label style="font-size: 0.85rem; color: var(--text-sub);">문서 개요 요약 (줄바꿈으로 개별 문장 수정)</label>
+          <textarea class="form-textarea" id="editOverview" rows="4" placeholder="개요 요약문..."></textarea>
+        </div>
+
+        <div style="margin-bottom: 1.2rem;">
+          <h4 style="font-size: 0.95rem; color: var(--text-sub); margin-bottom: 0.4rem;">문서 작성 목적</h4>
+          <textarea class="form-textarea" id="editPurpose" rows="2"></textarea>
+        </div>
+
+        <div style="margin-bottom: 1.2rem;">
+          <h4 style="font-size: 0.95rem; color: var(--text-sub); margin-bottom: 0.4rem;">주요 세부 내용 목록</h4>
+          <div id="resMainContentsList"></div>
+        </div>
+
+        <div>
+          <h4 style="font-size: 0.95rem; color: var(--text-sub); margin-bottom: 0.4rem;">결론 및 핵심 메시지</h4>
+          <textarea class="form-textarea" id="editConclusion" rows="2"></textarea>
+        </div>
+
+        <!-- Save Button -->
+        <button class="btn-action btn-save" id="btnSave" onclick="submitSave()">💾 DB 요약 및 원문 파일 저장</button>
+      </div>
+
+      <!-- 4. 주요 키워드 Card -->
+      <div class="card">
+        <div class="section-title"><span>🏷️</span> 5대 범주 주요 키워드</div>
+        <div style="margin-bottom: 0.8rem;"><label style="font-size: 0.82rem; color: var(--text-sub);">인물 (쉼표 구분)</label><input class="form-input" id="editKeyPersons"></div>
+        <div style="margin-bottom: 0.8rem;"><label style="font-size: 0.82rem; color: var(--text-sub);">기관 / 소속부서</label><input class="form-input" id="editKeyOrgs"></div>
+        <div style="margin-bottom: 0.8rem;"><label style="font-size: 0.82rem; color: var(--text-sub);">일정 / 날짜</label><input class="form-input" id="editKeySchedules"></div>
+        <div style="margin-bottom: 0.8rem;"><label style="font-size: 0.82rem; color: var(--text-sub);">주요 수치 / 단위</label><input class="form-input" id="editKeyMetrics"></div>
+        <div><label style="font-size: 0.82rem; color: var(--text-sub);">핵심 개념</label><input class="form-input" id="editKeyConcepts"></div>
+      </div>
+
+      <!-- 5. 검증 상태 & 이슈 Card -->
+      <div class="card">
+        <div class="section-title"><span>🛡️</span> AI 검증 상태 및 확인 필요 항목</div>
+        <div style="display: flex; gap: 1rem; align-items: center; margin-bottom: 1rem;">
+          <span class="badge badge-status" id="resStatusBadge">확인 필요</span>
+          <span class="badge badge-passed" id="resIsPassed">검증 통과</span>
+        </div>
+        <div id="resIssueList"></div>
+      </div>
+
+      <!-- 6. 사람이 확인할 체크리스트 Card -->
+      <div class="card">
+        <div class="section-title"><span>✅</span> 사람이 직접 검토할 필수 체크리스트</div>
+        <div id="resHumanChecklist"></div>
+      </div>
+
+    </div>
+
+    <!-- Multi-file Unconfirmed Work List Card -->
+    <div class="card" style="margin-top: 2rem;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.8rem;">
+        <div class="section-title" style="margin-bottom: 0;"><span>📋</span> 미확인 작업 목록</div>
+        <div style="display: flex; gap: 0.6rem;">
+          <button class="btn-action btn-save" type="button" style="width: auto; margin-top: 0; padding: 0.55rem 1.1rem; font-size: 0.85rem;" onclick="batchConfirmWorkList()">
+            💾 선택 항목 일괄 저장
+          </button>
+          <button class="btn-action" type="button" style="width: auto; margin-top: 0; padding: 0.55rem 1.1rem; font-size: 0.85rem; background: linear-gradient(135deg, var(--accent-rose), #dc2626);" onclick="batchDeleteWorkList()">
+            🗑️ 선택 항목 일괄 삭제
+          </button>
+        </div>
+      </div>
+
+      <div style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 0.88rem;">
+          <thead>
+            <tr style="border-bottom: 1px solid var(--card-border); color: var(--text-sub); text-align: left;">
+              <th style="padding: 0.6rem 0.5rem; width: 40px; text-align: center;">
+                <input type="checkbox" id="selectAllWorkList" onclick="toggleSelectAllWorkList(this.checked)">
+              </th>
+              <th style="padding: 0.6rem 0.5rem; width: 170px;">저장경로</th>
+              <th style="padding: 0.6rem 0.5rem; width: 120px;">소속부서</th>
+              <th style="padding: 0.6rem 0.5rem; width: 480px;">파일명</th>
+              <th style="padding: 0.6rem 0.5rem; width: 500px;">요약내용</th>
+              <th style="padding: 0.6rem 0.5rem; width: 210px; text-align: center; white-space: nowrap;">작업</th>
+            </tr>
+          </thead>
+          <tbody id="workListTableBody">
+            <tr>
+              <td colspan="6" style="text-align: center; color: var(--text-sub); padding: 1.8rem;">
+                등록된 미확인 다중파일 작업 문서가 없습니다.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Unsupported Files List Card (처리 불가 파일 리스트) -->
+    <div class="card" id="unsupportedCard" style="margin-top: 2rem;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.8rem;">
+        <div class="section-title" style="margin-bottom: 0;"><span>⚠️</span> 처리 불가 파일 리스트 (지원하지 않는 포맷)</div>
+        <button class="btn-action" type="button" style="width: auto; margin-top: 0; padding: 0.45rem 0.9rem; font-size: 0.8rem; background: var(--bg-card-hover);" onclick="clearUnsupportedFiles()">
+          🧹 목록 비우기
+        </button>
+      </div>
+
+      <div style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 0.88rem;">
+          <thead>
+            <tr style="border-bottom: 1px solid var(--card-border); color: var(--text-sub); text-align: left;">
+              <th style="padding: 0.6rem 0.5rem; width: 250px;">원본저장경로</th>
+              <th style="padding: 0.6rem 0.5rem; width: 200px;">파일명</th>
+              <th style="padding: 0.6rem 0.5rem; width: 170px;">작성일시</th>
+              <th style="padding: 0.6rem 0.5rem; width: 120px;">파일크기</th>
+            </tr>
+          </thead>
+          <tbody id="unsupportedTableBody">
+            <tr>
+              <td colspan="4" style="text-align: center; color: var(--text-sub); padding: 1.8rem;">
+                등록된 처리 불가 파일이 없습니다. (지원 포맷: PDF, DOCX, TXT, HWP, HWPX, PPTX)
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================= -->
+  <!-- TAB 2: 파일검색 & 요약조회/수정/다운로드 (File Search Tab)            -->
+  <!-- ================================================================= -->
+  <div class="tab-content" id="tabSearch">
+    <div class="card">
+      <div class="section-title"><span>🔍</span> DB 아카이빙 문서 검색</div>
+      <div class="search-bar">
+        <input type="text" class="form-input" id="searchInput" placeholder="검색어 (키워드, 요약문, 파일명)" style="margin-top:0;">
+        <select class="form-select" id="deptSelect" style="width: 180px; margin-top:0;">
+          <option value="">전체 부서</option>
+          <option value="디지털혁신팀">디지털혁신팀</option>
+          <option value="AI개발팀">AI개발팀</option>
+        </select>
+        <button class="btn-action" style="width: 120px; margin-top:0;" onclick="executeSearch()">검색</button>
+      </div>
+
+      <div class="search-options-panel" style="margin-top: 1rem; margin-bottom: 1.2rem; padding: 0.8rem 1rem; background: rgba(15, 23, 42, 0.4); border: 1px solid var(--card-border); border-radius: 10px;">
+        <div style="font-size: 0.85rem; color: var(--text-sub); margin-bottom: 0.5rem; font-weight: 600;">
+          🎯 검색 대상 항목 선택 (체크된 항목 간 OR 연산, 폴더 조건과 AND 연산):
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 0.8rem 1.2rem; font-size: 0.85rem; color: var(--text-main);">
+          <label style="cursor: pointer; display: flex; align-items: center; gap: 0.3rem;">
+            <input type="checkbox" name="searchFields" value="filename" checked> 파일명
+          </label>
+          <label style="cursor: pointer; display: flex; align-items: center; gap: 0.3rem;">
+            <input type="checkbox" name="searchFields" value="overview" checked> 문서 개요
+          </label>
+          <label style="cursor: pointer; display: flex; align-items: center; gap: 0.3rem;">
+            <input type="checkbox" name="searchFields" value="keywords" checked> 키워드
+          </label>
+          <label style="cursor: pointer; display: flex; align-items: center; gap: 0.3rem;">
+            <input type="checkbox" name="searchFields" value="subject_purpose"> 문서 주제/목적
+          </label>
+          <label style="cursor: pointer; display: flex; align-items: center; gap: 0.3rem;">
+            <input type="checkbox" name="searchFields" value="main_contents"> 주요 내용
+          </label>
+          <label style="cursor: pointer; display: flex; align-items: center; gap: 0.3rem;">
+            <input type="checkbox" name="searchFields" value="conclusion"> 결론/핵심메시지
+          </label>
+          <label style="cursor: pointer; display: flex; align-items: center; gap: 0.3rem;">
+            <input type="checkbox" name="searchFields" value="core_structure"> 핵심 구조
+          </label>
+          <label style="cursor: pointer; display: flex; align-items: center; gap: 0.3rem;">
+            <input type="checkbox" name="searchFields" value="key_sentences"> 핵심 문장
+          </label>
+          <label style="cursor: pointer; display: flex; align-items: center; gap: 0.3rem;">
+            <input type="checkbox" name="searchFields" value="issues"> 검증 이슈
+          </label>
+          <label style="cursor: pointer; display: flex; align-items: center; gap: 0.3rem;">
+            <input type="checkbox" name="searchFields" value="raw_text"> 원문 텍스트
+          </label>
+        </div>
+      </div>
+
+      <div class="search-layout">
+        <aside class="folder-tree-panel" aria-label="파일 저장 폴더 구조">
+          <div class="section-title" style="font-size:0.95rem; margin-bottom:0.7rem;"><span>📁</span> 파일 저장 폴더</div>
+          <div id="folderTree" role="tree"></div>
+        </aside>
+        <section>
+          <div id="selectedFolderLabel" class="selected-folder-label"></div>
+          <div id="searchResultsList"></div>
+        </section>
+        <aside class="search-detail-panel" aria-label="archived document detail">
+          <div class="section-title" style="font-size:0.95rem; margin-bottom:0.7rem;"><span>📄</span> 상세 요약</div>
+          <div id="searchDetailPanel" class="detail-empty"></div>
+        </aside>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Summary Detail Modal for Search Result -->
+<div class="modal-overlay" id="summaryModal">
+  <div class="modal-content card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+      <h3 style="font-size: 1.3rem; color: #60a5fa;">📄 아카이빙 문서 상세 요약</h3>
+      <button onclick="closeModal()" style="background: none; border: none; color: var(--text-sub); font-size: 1.5rem; cursor: pointer;">✕</button>
+    </div>
+
+    <div style="margin-bottom: 1.2rem;">
+      <label style="font-size: 0.85rem; color: var(--text-sub);">한 줄 / 개요 요약 (수정 가능)</label>
+      <textarea class="form-textarea" id="modalOverviewEdit" rows="3"></textarea>
+    </div>
+
+    <!-- Upper Options: 소속부서(좌) + 저장경로(우) 1줄 2컬럼 배치 -->
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.2rem;">
+      <div>
+        <label style="font-size: 0.85rem; color: var(--text-sub); display:block; margin-bottom:0.4rem;">🏢 소속 부서 (수정 가능)</label>
+        <div style="display:flex; gap:0.5rem; align-items:center;">
+          <input type="text" class="form-input" id="modalDepartment" placeholder="예: 디지털혁신팀" style="margin-top:0; flex:1;">
+          <button class="btn-action" type="button" style="width:95px; margin-top:0; font-size:0.8rem; padding:0.5rem 0.6rem; white-space:nowrap; background:#3b82f6;" onclick="loadModalDepartmentRecommend()">
+            🤖 부서 추천
+          </button>
+        </div>
+        <div id="modalDeptRecommendList" style="margin-top:0.4rem;"></div>
+      </div>
+
+      <div>
+        <label style="font-size: 0.85rem; color: var(--text-sub); display:block; margin-bottom:0.4rem;">📁 저장 경로 (수정 가능)</label>
+        <div style="display:flex; gap:0.5rem; align-items:center;">
+          <input type="text" class="form-input" id="modalFolderPath" placeholder="예: archive/디지털혁신팀" style="margin-top:0; flex:1;">
+          <button class="btn-action" type="button" style="width:95px; margin-top:0; font-size:0.8rem; padding:0.5rem 0.6rem; white-space:nowrap;" onclick="loadFolderRecommend()">
+            📂 경로 추천
+          </button>
+        </div>
+        <div id="folderRecommendList" style="margin-top:0.4rem;"></div>
+      </div>
+    </div>
+
+    <!-- 문서 핵심 요약 및 5대 범주 키워드 (가독성 향상 카드 구조) -->
+    <div style="background: rgba(30, 41, 59, 0.5); border: 1px solid var(--card-border); border-radius: 8px; padding: 1rem; margin-bottom: 1.2rem;">
+      <label style="font-size: 0.85rem; color: #60a5fa; font-weight: 600; display:block; margin-bottom:0.4rem;">📋 문서 핵심 요약 개요</label>
+      <textarea class="form-textarea" id="modalSummaryText" rows="3" style="margin-bottom:0.8rem;"></textarea>
+
+      <label style="font-size: 0.85rem; color: #34d399; font-weight: 600; display:block; margin-bottom:0.4rem;">🏷️ 5대 범주별 주요 키워드</label>
+      <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0.5rem;">
+        <input class="form-input" id="modalKeyPersons" placeholder="👤 인물 (쉼표 구분)" style="margin-top:0;">
+        <input class="form-input" id="modalKeyOrgs" placeholder="🏛️ 기관/부서 (쉼표 구분)" style="margin-top:0;">
+        <input class="form-input" id="modalKeySchedules" placeholder="📅 일정/날짜 (쉼표 구분)" style="margin-top:0;">
+        <input class="form-input" id="modalKeyMetrics" placeholder="📊 수치/단위 (쉼표 구분)" style="margin-top:0;">
+        <input class="form-input" id="modalKeyConcepts" placeholder="💡 핵심 개념 (쉼표 구분)" style="margin-top:0;">
+      </div>
+    </div>
+
+    <div id="modalDetailContent" style="margin-bottom: 1.5rem;"></div>
+
+    <div class="compact-actions">
+      <button class="btn-action btn-save" onclick="submitModalSave()">저장</button>
+      <button class="btn-action btn-download" onclick="submitModalDownload()">다운로드</button>
+      <button class="btn-action" style="background: linear-gradient(135deg, var(--accent-rose), #dc2626);" onclick="submitModalDelete()">파일삭제</button>
+    </div>
+  </div>
+</div>
+
+<!-- Rendered Markdown Viewer -->
+<div class="modal-overlay markdown-viewer-overlay" id="markdownViewer" role="dialog" aria-modal="true" aria-labelledby="markdownViewerTitle">
+  <div class="modal-content card markdown-viewer-shell">
+    <div class="markdown-viewer-header">
+      <h3 id="markdownViewerTitle" style="font-size:1.3rem; color:#60a5fa;">📝 문서 요약 MD</h3>
+      <div class="markdown-viewer-header-actions">
+        <button class="btn-action btn-save" onclick="editMarkdownDocument()">수정</button>
+        <button class="btn-action btn-download" onclick="downloadMarkdownOriginal()">다운로드</button>
+        <button class="btn-action" onclick="closeMarkdownViewer()">닫기</button>
+      </div>
+    </div>
+    <div id="markdownViewerContent" class="markdown-viewer-content">
+      <p class="detail-empty">Markdown을 불러오는 중...</p>
+    </div>
+  </div>
+</div>
+
+<script>
+  let selectedFile = null;
+  let currentFileId = null;
+  let activeModalFileId = null;
+  let markdownViewerFileId = null;
+  let currentResultData = null;
+  let modalResultData = null;
+  let selectedFolderPath = '';
+  let highlightedFileId = null;
+  let selectedSearchFileId = null;
+  const expandedFolderPaths = new Set();
+
+  const ARCHIVE_ROOT = 'output';
+
+  function normalizeArchivePath(path) {
+    const cleanPath = (path || '').trim().replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+    if (!cleanPath || cleanPath === ARCHIVE_ROOT) return ARCHIVE_ROOT;
+    return cleanPath.startsWith(`${ARCHIVE_ROOT}/`) ? cleanPath : `${ARCHIVE_ROOT}/${cleanPath}`;
+  }
+
+  function displayArchivePath(path) {
+    const normalized = normalizeArchivePath(path);
+    return normalized === ARCHIVE_ROOT ? '' : normalized.replace(/^output\/?/, '');
+  }
+
+  function folderQueryPath() {
+    return selectedFolderPath && normalizeArchivePath(selectedFolderPath) !== ARCHIVE_ROOT
+      ? normalizeArchivePath(selectedFolderPath)
+      : '';
+  }
+
+  async function refreshDepartmentDropdown() {
+    const select = document.getElementById('deptSelect');
+    if (!select) return;
+    const currentVal = select.value;
+    try {
+      const res = await fetch('/api/v1/documents/departments');
+      const data = await res.json();
+      select.innerHTML = '<option value="">전체 부서</option>';
+      if (data.data && Array.isArray(data.data)) {
+        data.data.forEach(dept => {
+          const opt = document.createElement('option');
+          opt.value = dept;
+          opt.textContent = dept;
+          select.appendChild(opt);
+        });
+      }
+      select.value = currentVal;
+    } catch (err) {
+      console.error('Failed to load departments:', err);
+    }
+  }
+
+  function switchTab(tabName) {
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+
+    if (tabName === 'upload') {
+      document.getElementById('tabUploadBtn').classList.add('active');
+      document.getElementById('tabUpload').classList.add('active');
+      loadUnconfirmedWorkList();
+    } else {
+      document.getElementById('tabSearchBtn').classList.add('active');
+      document.getElementById('tabSearch').classList.add('active');
+      refreshDepartmentDropdown();
+      refreshFolderTree();
+      executeSearch();
+    }
+  }
+
+  // File Input / Drag & Drop Handling
+  const dropzone = document.getElementById('dropzone');
+  const fileInput = document.getElementById('fileInput');
+  const btnAnalyze = document.getElementById('btnAnalyze');
+  const fileSelectedInfo = document.getElementById('fileSelectedInfo');
+
+  // Recursive Drag & Drop Folder Traversal
+  async function getFilesFromDataTransferItems(items) {
+    const fileList = [];
+    const queue = [];
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.kind === 'file') {
+        const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
+        if (entry) {
+          queue.push(traverseFileTree(entry));
+        } else {
+          const file = item.getAsFile();
+          if (file) fileList.push(file);
+        }
+      }
+    }
+
+    const results = await Promise.all(queue);
+    results.forEach(files => fileList.push(...files));
+    return fileList;
+  }
+
+  function traverseFileTree(entry, path = '') {
+    return new Promise((resolve) => {
+      if (entry.isFile) {
+        entry.file((file) => {
+          try {
+            Object.defineProperty(file, 'webkitRelativePath', {
+              value: path + file.name,
+              writable: false
+            });
+          } catch (e) {}
+          resolve([file]);
+        }, () => resolve([]));
+      } else if (entry.isDirectory) {
+        const dirReader = entry.createReader();
+        const files = [];
+        const readEntries = () => {
+          dirReader.readEntries(async (entries) => {
+            if (entries.length === 0) {
+              resolve(files);
+            } else {
+              const entryPromises = entries.map(e => traverseFileTree(e, path + entry.name + '/'));
+              const entryResults = await Promise.all(entryPromises);
+              entryResults.forEach(fList => files.push(...fList));
+              readEntries();
+            }
+          }, () => resolve(files));
+        };
+        readEntries();
+      } else {
+        resolve([]);
+      }
+    });
+  }
+
+  ['dragenter', 'dragover'].forEach(name => dropzone.addEventListener(name, (e) => { e.preventDefault(); dropzone.classList.add('dragover'); }));
+  ['dragleave', 'drop'].forEach(name => dropzone.addEventListener(name, (e) => { e.preventDefault(); dropzone.classList.remove('dragover'); }));
+  dropzone.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    dropzone.classList.remove('dragover');
+    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+      const files = await getFilesFromDataTransferItems(e.dataTransfer.items);
+      if (files.length > 0) {
+        handleBatchFileSelect(files);
+      }
+    } else if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleBatchFileSelect(e.dataTransfer.files);
+    }
+  });
+
+  function handleFileSelect(file) {
+    if (!file) return;
+    if (!isFileSupported(file)) {
+      addUnsupportedFiles([file]);
+      fileSelectedInfo.textContent = `⚠️ 선택한 파일(${file.name})은 지원하지 않는 포맷입니다. 하단 처리 불가 파일 리스트를 확인하십시오.`;
+      fileSelectedInfo.style.color = '#f87171';
+      fileSelectedInfo.style.display = 'block';
+      btnAnalyze.disabled = true;
+      return;
+    }
+    selectedFile = file;
+    fileSelectedInfo.textContent = `선택된 파일: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+    fileSelectedInfo.style.color = 'var(--accent-blue)';
+    fileSelectedInfo.style.display = 'block';
+    btnAnalyze.disabled = false;
+  }
+
+  function resetForm() {
+    selectedFile = null;
+    currentFileId = null;
+    fileInput.value = '';
+    fileSelectedInfo.style.display = 'none';
+    btnAnalyze.disabled = true;
+    document.getElementById('errorState').style.display = 'none';
+    document.getElementById('loadingState').style.display = 'none';
+    document.getElementById('resultSection').style.display = 'none';
+    document.getElementById('toastSuccess').style.display = 'none';
+  }
+
+  async function submitAnalysis() {
+    if (!selectedFile) return;
+
+    document.getElementById('errorState').style.display = 'none';
+    document.getElementById('resultSection').style.display = 'none';
+    document.getElementById('toastSuccess').style.display = 'none';
+    document.getElementById('loadingState').style.display = 'block';
+    btnAnalyze.disabled = true;
+
+    const rawDept = (document.getElementById('uploadDepartmentInput').value || '').trim();
+    const dept = (!rawDept || rawDept === '부서 추천') ? '' : rawDept;
+    const rawFolder = document.getElementById('uploadFolderInput') ? (document.getElementById('uploadFolderInput').value || '').trim() : '';
+    const folder = (!rawFolder || rawFolder === '경로 추천') ? '' : rawFolder;
+
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+    if (dept) formData.append('department', dept);
+    if (folder) formData.append('target_folder', folder);
+
+    try {
+      const response = await fetch('/api/v1/documents/analyze', {
+        method: 'POST',
+        body: formData
+      });
+
+      const resData = await response.json();
+      document.getElementById('loadingState').style.display = 'none';
+
+      if (!response.ok || !resData.success) {
+        showError(resData.error ? resData.error.message : (resData.detail || '분석 중 에러가 발생했습니다.'));
+        return;
+      }
+
+      currentFileId = resData.data.file_id;
+      renderResult(resData.data);
+
+    } catch (err) {
+      document.getElementById('loadingState').style.display = 'none';
+      showError('서버 연결 중 오류가 발생했습니다: ' + err.message);
+    }
+  }
+
+  async function submitSave() {
+    if (!currentFileId) return;
+
+    const folderPath = normalizeArchivePath(document.getElementById('editFolder').value);
+    const filename = document.getElementById('editFilename').value.trim();
+    const dept = document.getElementById('editDepartment').value.trim() || '디지털혁신팀';
+    const overviewRaw = document.getElementById('editOverview').value;
+    const overviewList = overviewRaw.split('\n').map(s => s.trim()).filter(s => s.length > 0);
+    const editedResults = buildEditedResults(currentResultData, 'edit');
+    editedResults.summary_data.document_overview = overviewList;
+    editedResults.department = dept;
+
+    if (!folderPath || !filename) {
+      alert('저장 폴더 경로와 파일명을 입력하십시오.');
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/v1/documents/${currentFileId}/save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          folder_path: folderPath,
+          filename: filename,
+          document_overview: overviewList,
+          department: dept,
+          ...editedResults
+        })
+      });
+
+      const resData = await response.json();
+      if (response.ok && resData.success) {
+        showToast(`✨ ${resData.message} (보관 경로: ${resData.archived_file_path})`, true);
+        selectedFolderPath = folderPath.replace(/\\/g, '/').replace(/\/$/, '');
+        highlightedFileId = currentFileId;
+        expandFolderAncestors(selectedFolderPath);
+        await refreshDepartmentDropdown();
+        switchTab('search');
+        await refreshFolderTree();
+        await executeSearch();
+      } else {
+        alert(resData.detail || '저장 중 실패했습니다.');
+      }
+    } catch (err) {
+      alert('저장 시 서버 오류 발생: ' + err.message);
+    }
+  }
+
+  function showError(msg) {
+    setDomText('errorMessage', msg);
+    setDomStyle('errorState', 'display', 'block');
+    btnAnalyze.disabled = false;
+  }
+
+  function setDomText(id, value) {
+    const element = document.getElementById(id);
+    if (element) element.textContent = value;
+    return element;
+  }
+
+  function setDomValue(id, value) {
+    const element = document.getElementById(id);
+    if (element) element.value = value;
+    return element;
+  }
+
+  function setDomStyle(id, property, value) {
+    const element = document.getElementById(id);
+    if (element) element.style[property] = value;
+    return element;
+  }
+
+  function showToast(msg, scrollToTop = false) {
+    document.getElementById('toastMessage').textContent = msg;
+    document.getElementById('toastSuccess').style.display = 'block';
+    if (scrollToTop) {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }
+
+  function renderResult(data) {
+    currentResultData = data;
+    renderAiErrors(data);
+    const info = data.document_info || {};
+    setDomText('resFilename', info.original_filename || '-');
+    setDomText('resFormat', info.format || '-');
+    setDomText('resSize', info.size_formatted || '-');
+    setDomText('resUploadedAt', info.uploaded_at || '-');
+
+    const arch = data.archiving_info || {};
+    const defaultDept = document.getElementById('uploadDepartmentInput').value.trim() || '디지털혁신팀';
+    setDomValue('editFolder', displayArchivePath(arch.recommended_folder || `output/archive/${defaultDept}/`));
+    setDomValue('editFilename', arch.recommended_filename || info.original_filename);
+    setDomValue('editDepartment', data.department || defaultDept);
+
+    // AI 추천 부서 버튼: recommended_departments가 있을 때만 표시
+    const recDepts = (data.analysis_data || {}).recommended_departments || [];
+    const btnAiDept = document.getElementById('btnAiDeptRecommend');
+    if (btnAiDept) {
+      btnAiDept.style.display = recDepts.length > 0 ? '' : 'none';
+      btnAiDept.dataset.departments = JSON.stringify(recDepts);
+    }
+
+    const sData = data.summary_data || {};
+    setDomValue('editOverview', (sData.document_overview || []).join('\n'));
+    setDomValue('editPurpose', sData.document_purpose || '');
+    setDomValue('editConclusion', sData.conclusion_or_core_message || '');
+    setKeywordInputs('edit', (data.analysis_data || {}).key_keywords || {});
+
+    const mainListDiv = document.getElementById('resMainContentsList');
+    if (!mainListDiv) return;
+    mainListDiv.innerHTML = '';
+    (sData.main_contents_list || []).forEach(cat => {
+      const box = document.createElement('div');
+      box.style.marginBottom = '0.6rem';
+      box.innerHTML = `<strong style="color: var(--accent-blue); font-size: 0.9rem;">[${cat.category}]</strong>`;
+      const ul = document.createElement('ul');
+      (cat.points || []).forEach(pt => {
+        const li = document.createElement('li');
+        li.textContent = pt;
+        ul.appendChild(li);
+      });
+      box.appendChild(ul);
+      mainListDiv.appendChild(box);
+    });
+
+
+    const vData = data.verification_data || {};
+    setDomText('resStatusBadge', vData.status_badge || '확인 필요');
+    setDomText('resIsPassed', vData.is_passed ? '검증 완료' : '검증 미통과');
+
+    const aData = data.analysis_data || {};
+    const kw = aData.key_keywords || {};
+
+    const issueDiv = document.getElementById('resIssueList');
+    if (!issueDiv) return;
+    issueDiv.innerHTML = '';
+    const issues = vData.issue_list || [];
+    if (issues.length === 0) {
+      issueDiv.innerHTML = '<p style="color: var(--text-sub); font-size: 0.9rem;">특별히 검출된 문제가 없습니다.</p>';
+    } else {
+      issues.forEach(iss => {
+        const div = document.createElement('div');
+        div.className = 'issue-box';
+        div.innerHTML = `
+          <h4>[${iss.issue_type}] ${iss.issue_title}</h4>
+          <p>${iss.reason_description}</p>
+          <div class="evidence-quote">📌 원문 근거: "${iss.relevant_original_evidence}"</div>
+        `;
+        issueDiv.appendChild(div);
+      });
+    }
+
+    const chkDiv = document.getElementById('resHumanChecklist');
+    if (!chkDiv) return;
+    chkDiv.innerHTML = '';
+    const chks = vData.human_review_checklist || [];
+    chks.forEach((chk, idx) => {
+      const div = document.createElement('div');
+      div.className = 'chk-item';
+      div.innerHTML = `
+        <input type="checkbox" id="chk_${idx}">
+        <div>
+          <label for="chk_${idx}" style="font-weight: 600; font-size: 0.92rem; color: #f1f5f9; cursor: pointer;">${chk.title}</label>
+          <p style="font-size: 0.85rem; color: var(--text-sub); margin-top: 0.2rem;">${chk.description}</p>
+        </div>
+      `;
+      chkDiv.appendChild(div);
+    });
+
+    setDomStyle('resultSection', 'display', 'block');
+  }
+
+  function renderAiErrors(data) {
+    const resultSection = document.getElementById('resultSection');
+    if (!resultSection) return;
+    const existing = document.getElementById('aiErrorCard');
+    if (existing) existing.remove();
+    const errors = [
+      ['분석', data.analysis_data],
+      ['요약', data.summary_data],
+      ['검증', data.verification_data]
+    ].filter(([, item]) => item && item.error_message);
+    if (!errors.length) return;
+    const card = document.createElement('div');
+    card.id = 'aiErrorCard';
+    card.className = 'ai-error-card';
+    const title = document.createElement('strong');
+    title.textContent = 'AI 처리 중 일부 오류가 발생했습니다.';
+    card.appendChild(title);
+    const list = document.createElement('ul');
+    errors.forEach(([label, item]) => {
+      const li = document.createElement('li');
+      li.textContent = `${label}: ${item.error_message}`;
+      list.appendChild(li);
+    });
+    card.appendChild(list);
+    resultSection.prepend(card);
+  }
+
+  function renderPills(containerId, list) {
+    const el = document.getElementById(containerId);
+    el.innerHTML = '';
+    if (!list || list.length === 0) {
+      el.innerHTML = '<span style="font-size: 0.8rem; color: #64748b;">정보 없음</span>';
+      return;
+    }
+    list.forEach(txt => {
+      const span = document.createElement('span');
+      span.className = 'pill';
+      span.textContent = txt;
+      el.appendChild(span);
+    });
+  }
+
+  // =================================================================
+  // Tab 2: Search & Detail Modal Implementation
+  // =================================================================
+  async function refreshFolderTree() {
+    const treeDiv = document.getElementById('folderTree');
+    treeDiv.innerHTML = '<p style="color:var(--text-sub); font-size:0.85rem;">폴더 조회 중...</p>';
+
+    try {
+      const res = await fetch('/api/v1/documents/folder-tree');
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        treeDiv.innerHTML = '<p style="color:#f87171; font-size:0.85rem;">폴더 구조를 불러올 수 없습니다.</p>';
+        return;
+      }
+
+      const rootNode = { path: ARCHIVE_ROOT, children: {}, files: [] };
+      Object.values(data.folders || {}).forEach(node => {
+        if (normalizeArchivePath(node.path) === ARCHIVE_ROOT) {
+          Object.assign(rootNode, node, { path: ARCHIVE_ROOT });
+        } else {
+          rootNode.children[normalizeArchivePath(node.path)] = node;
+        }
+      });
+
+      if (!selectedFolderPath) selectedFolderPath = ARCHIVE_ROOT;
+      expandedFolderPaths.add(ARCHIVE_ROOT);
+      treeDiv.innerHTML = '';
+      treeDiv.appendChild(createFolderTreeNode(rootNode, true));
+    } catch (err) {
+      treeDiv.innerHTML = `<p style="color:#f87171; font-size:0.85rem;">오류: ${err.message}</p>`;
+    }
+  }
+
+  function splitKeywords(value) {
+    return String(value || '').split(',').map(item => item.trim()).filter(Boolean);
+  }
+
+  function setKeywordInputs(prefix, keywords) {
+    const values = keywords || {};
+    setDomValue(`${prefix}KeyPersons`, (values.persons || []).join(', '));
+    setDomValue(`${prefix}KeyOrgs`, (values.organizations || []).join(', '));
+    setDomValue(`${prefix}KeySchedules`, (values.schedules || []).join(', '));
+    setDomValue(`${prefix}KeyMetrics`, (values.metrics || []).join(', '));
+    setDomValue(`${prefix}KeyConcepts`, (values.concepts || []).join(', '));
+  }
+
+  function readDomValue(id) {
+    const element = document.getElementById(id);
+    return element ? element.value : '';
+  }
+
+  function readKeywordInputs(prefix) {
+    return {
+      persons: splitKeywords(readDomValue(`${prefix}KeyPersons`)),
+      organizations: splitKeywords(readDomValue(`${prefix}KeyOrgs`)),
+      schedules: splitKeywords(readDomValue(`${prefix}KeySchedules`)),
+      metrics: splitKeywords(readDomValue(`${prefix}KeyMetrics`)),
+      concepts: splitKeywords(readDomValue(`${prefix}KeyConcepts`))
+    };
+  }
+
+  function buildEditedResults(data, prefix) {
+    const result = JSON.parse(JSON.stringify(data || {}));
+    result.analysis_data = result.analysis_data || {};
+    result.summary_data = result.summary_data || {};
+    result.verification_data = result.verification_data || {};
+    result.summary_data.document_purpose = readDomValue(`${prefix}Purpose`).trim();
+    result.summary_data.conclusion_or_core_message = readDomValue(`${prefix}Conclusion`).trim();
+    result.analysis_data.key_keywords = readKeywordInputs(prefix);
+    return result;
+  }
+
+  function createFolderTreeNode(node, isRoot = false) {
+    const normalizedPath = normalizeArchivePath(node.path);
+    const children = Object.values(node.children || {});
+    const wrapper = document.createElement('div');
+    const row = document.createElement('button');
+
+    const folderName = normalizedPath.split('/').pop() || ARCHIVE_ROOT;
+    wrapper.className = 'folder-tree-node';
+    row.type = 'button';
+    row.className = `folder-tree-row ${normalizeArchivePath(selectedFolderPath) === normalizedPath ? 'selected' : ''}`;
+    row.textContent = `${children.length > 0 ? (expandedFolderPaths.has(normalizedPath) ? '▾' : '▸') : '•'} ${folderName}`;
+    row.onclick = () => {
+      selectedFolderPath = normalizedPath;
+      if (children.length > 0) {
+        if (expandedFolderPaths.has(normalizedPath)) expandedFolderPaths.delete(normalizedPath);
+        else expandedFolderPaths.add(normalizedPath);
+      }
+      refreshFolderTree();
+      executeSearch();
+    };
+    wrapper.appendChild(row);
+
+    if (expandedFolderPaths.has(normalizedPath) && children.length > 0) {
+      const childBox = document.createElement('div');
+      childBox.className = 'folder-tree-children';
+      children
+        .sort((a, b) => normalizeArchivePath(a.path).localeCompare(normalizeArchivePath(b.path)))
+        .forEach(child => childBox.appendChild(createFolderTreeNode(child)));
+      wrapper.appendChild(childBox);
+    }
+
+    return wrapper;
+  }
+
+  function expandFolderAncestors(path) {
+    const parts = normalizeArchivePath(path).split('/');
+    for (let i = 1; i <= parts.length; i++) {
+      expandedFolderPaths.add(parts.slice(0, i).join('/'));
+    }
+  }
+
+  function clearSearchDetail() {
+    selectedSearchFileId = null;
+    activeModalFileId = null;
+    document.getElementById('searchDetailPanel').className = 'detail-empty';
+    document.getElementById('searchDetailPanel').innerHTML = '';
+  }
+
+  async function executeSearch() {
+    const kw = document.getElementById('searchInput').value.trim();
+    const dept = document.getElementById('deptSelect').value;
+    const params = new URLSearchParams();
+    if (kw) params.set('keyword', kw);
+    if (dept) params.set('department', dept);
+    const selectedFolder = folderQueryPath();
+    if (selectedFolder) params.set('folder', selectedFolder);
+
+    const checkedBoxes = Array.from(document.querySelectorAll('input[name="searchFields"]:checked'));
+    const checkedValues = checkedBoxes.map(cb => cb.value);
+    if (checkedValues.length > 0) {
+      params.set('fields', checkedValues.join(','));
+    }
+
+    try {
+      const res = await fetch(`/api/v1/documents/search?${params.toString()}`);
+      const data = await res.json();
+
+      const listDiv = document.getElementById('searchResultsList');
+      const labelDiv = document.getElementById('selectedFolderLabel');
+      const rootFolderName = ARCHIVE_ROOT.split('/').pop() || ARCHIVE_ROOT;
+      listDiv.innerHTML = '';
+      labelDiv.textContent = selectedFolder
+        ? `선택 폴더: ${displayArchivePath(selectedFolder)} 하위 전체`
+        : `선택 폴더: ${rootFolderName} 전체`;
+
+      if (!data.data || data.data.length === 0) {
+        listDiv.innerHTML = '<p style="text-align: center; color: var(--text-sub); padding: 2rem;">검색 조건에 해당되는 저장 문서가 없습니다.</p>';
+        clearSearchDetail();
+        return;
+      }
+
+      data.data.forEach(item => {
+        const itemCard = document.createElement('div');
+        itemCard.className = 'search-card-item';
+        itemCard.onclick = () => viewSummaryMarkdown(item.file_id);
+        itemCard.innerHTML = `
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 0.4rem;">
+            <h4 style="font-size: 1.05rem; color: #60a5fa;">📄 ${item.renamed_filename || item.original_filename}</h4>
+            <div>
+              <span class="badge badge-format">${item.format}</span>
+              <span class="badge badge-status">${item.status_badge}</span>
+            </div>
+          </div>
+          <p style="font-size: 0.9rem; color: #cbd5e1; margin-bottom: 0.5rem;">${item.one_line_summary}</p>
+          <div style="font-size: 0.8rem; color: var(--text-sub); display:flex; gap: 1.5rem;">
+            <span>소속: ${item.department}</span>
+            <span>일시: ${item.uploaded_at}</span>
+            <span>신뢰도 점수: <strong style="color:#34d399;">${item.confidence_score}점</strong></span>
+          </div>
+        `;
+        const actions = document.createElement('div');
+        actions.className = 'search-card-actions';
+        actions.appendChild(createSearchActionButton('수정', () => openSummaryModal(item.file_id)));
+        actions.appendChild(createSearchActionButton('다운로드', () => downloadOriginal(item.file_id)));
+        actions.appendChild(createSearchActionButton('🗑️ 삭제', () => deleteDocumentFromList(item.file_id), 'btn-delete-action'));
+        itemCard.appendChild(actions);
+        listDiv.appendChild(itemCard);
+      });
+
+    } catch (err) {
+      alert('검색 중 오류 발생: ' + err.message);
+    }
+  }
+
+  function createSearchActionButton(label, handler, className = '') {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = label;
+    if (className) button.className = className;
+    button.onclick = (event) => {
+      event.stopPropagation();
+      handler();
+    };
+    return button;
+  }
+
+  async function deleteDocumentFromList(fileId) {
+    const ok = await performDocumentDelete(fileId, '정말로 이 문서를 삭제하시겠습니까? (삭제 후 복구 불가)');
+    if (ok) {
+      showToast('문서가 성공적으로 삭제되었습니다.');
+      if (selectedSearchFileId === fileId) {
+        clearSearchDetail();
+      }
+      await refreshDepartmentDropdown();
+      await loadUnconfirmedWorkList();
+      await refreshFolderTree();
+      await executeSearch();
+    }
+  }
+
+  async function viewSummaryMarkdown(fileId) {
+    markdownViewerFileId = fileId;
+    selectedSearchFileId = fileId;
+    const viewer = document.getElementById('markdownViewer');
+    const content = document.getElementById('markdownViewerContent');
+    viewer.style.display = 'flex';
+    content.innerHTML = '<p class="detail-empty">Markdown을 불러오는 중...</p>';
+    try {
+      const response = await fetch(`/api/v1/documents/${fileId}/markdown`);
+      const markdown = await response.text();
+      if (!response.ok) {
+        throw new Error(markdown || 'Markdown 파일을 불러올 수 없습니다.');
+      }
+      content.innerHTML = renderMarkdown(markdown);
+    } catch (err) {
+      content.innerHTML = `<p class="detail-empty" style="color:#fca5a5;">${escapeHtml(err.message)}</p>`;
+    }
+  }
+
+  function closeMarkdownViewer() {
+    document.getElementById('markdownViewer').style.display = 'none';
+    markdownViewerFileId = null;
+    switchTab('search');
+  }
+
+  function editMarkdownDocument() {
+    if (!markdownViewerFileId) return;
+    const fileId = markdownViewerFileId;
+    closeMarkdownViewer();
+    openSummaryModal(fileId);
+  }
+
+  function downloadMarkdownOriginal() {
+    if (!markdownViewerFileId) return;
+    downloadOriginal(markdownViewerFileId);
+  }
+
+  function escapeHtml(value) {
+    return String(value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  function renderMarkdown(markdown) {
+    const lines = String(markdown || '').split(/\r?\n/);
+    const html = [];
+    let paragraph = [];
+    let listType = null;
+
+    const closeParagraph = () => {
+      if (paragraph.length) {
+        html.push(`<p>${inlineMarkdown(paragraph.join(' '))}</p>`);
+        paragraph = [];
+      }
+    };
+    const closeList = () => {
+      if (listType) {
+        html.push(`</${listType}>`);
+        listType = null;
+      }
+    };
+
+    lines.forEach(line => {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        closeParagraph();
+        closeList();
+        return;
+      }
+      const heading = trimmed.match(/^(#{1,3})\s+(.+)$/);
+      if (heading) {
+        closeParagraph(); closeList();
+        const level = heading[1].length;
+        html.push(`<h${level}>${inlineMarkdown(heading[2])}</h${level}>`);
+        return;
+      }
+      const unordered = trimmed.match(/^[-*]\s+(.+)$/);
+      const ordered = trimmed.match(/^\d+\.\s+(.+)$/);
+      if (unordered || ordered) {
+        closeParagraph();
+        const nextType = unordered ? 'ul' : 'ol';
+        if (listType !== nextType) { closeList(); html.push(`<${nextType}>`); listType = nextType; }
+        html.push(`<li>${inlineMarkdown((unordered || ordered)[1])}</li>`);
+        return;
+      }
+      if (trimmed.startsWith('>')) {
+        closeParagraph(); closeList();
+        html.push(`<blockquote>${inlineMarkdown(trimmed.replace(/^>\s?/, ''))}</blockquote>`);
+        return;
+      }
+      closeList();
+      paragraph.push(trimmed);
+    });
+    closeParagraph(); closeList();
+    return html.join('');
+  }
+
+  function inlineMarkdown(value) {
+    let escaped = escapeHtml(value);
+    escaped = escaped.replace(/`([^`]+)`/g, '<code>$1</code>');
+    escaped = escaped.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    return escaped;
+  }
+
+  function downloadOriginal(fileId) {
+    window.location.href = `/api/v1/documents/${fileId}/download`;
+  }
+
+  async function selectSearchFile(fileId) {
+    selectedSearchFileId = fileId;
+    activeModalFileId = fileId;
+    document.querySelectorAll('.search-card-item').forEach(card => {
+      card.classList.toggle('selected', card.dataset.searchFileId === fileId);
+    });
+
+    const panel = document.getElementById('searchDetailPanel');
+    panel.className = '';
+    panel.innerHTML = '<p class="detail-empty">상세 요약 조회 중...</p>';
+
+    try {
+      const res = await fetch(`/api/v1/documents/${fileId}/result`);
+      const resData = await res.json();
+      if (!res.ok || !resData.success) {
+        panel.innerHTML = '<p class="detail-empty">상세 정보를 불러올 수 없습니다.</p>';
+        return;
+      }
+
+      const data = resData.data;
+      const info = data.document_info || {};
+      const sData = data.summary_data || {};
+      const archInfo = data.archiving_info || {};
+      panel.innerHTML = `
+        <p style="font-size:0.85rem; color:var(--text-sub); margin-bottom:0.6rem;">${info.original_filename || '-'}</p>
+        <label style="font-size:0.85rem; color:var(--text-sub);">저장 경로</label>
+        <input type="text" class="form-input" id="detailFolderPath" value="${displayArchivePath(archInfo.recommended_folder || '')}" style="margin-top:0.35rem;">
+        <label style="font-size:0.85rem; color:var(--text-sub); display:block; margin-top:0.9rem;">개요 요약</label>
+        <textarea class="form-textarea" id="detailOverviewEdit" rows="7" style="margin-top:0.35rem;">${(sData.document_overview || []).join('\n')}</textarea>
+        <div style="margin-top:0.9rem;">
+          <p style="font-size:0.85rem; color:var(--text-sub); margin-bottom:0.25rem;">문서 목적</p>
+          <p style="color:#cbd5e1; font-size:0.9rem;">${sData.document_purpose || '-'}</p>
+        </div>
+        <div style="margin-top:0.9rem;">
+          <p style="font-size:0.85rem; color:var(--text-sub); margin-bottom:0.25rem;">핵심 메시지</p>
+          <p style="color:#a78bfa; font-weight:600; font-size:0.92rem;">${sData.conclusion_or_core_message || '-'}</p>
+        </div>
+        <div class="detail-actions">
+          <button class="btn-action btn-save" onclick="submitDetailUpdate()">요약/경로 저장</button>
+          <button class="btn-action btn-download" onclick="submitModalDownload()">원본 다운로드</button>
+          <button class="btn-action" style="background:linear-gradient(135deg, var(--accent-rose), #dc2626);" onclick="submitDetailDelete()">삭제</button>
+        </div>
+      `;
+    } catch (err) {
+      panel.innerHTML = `<p class="detail-empty">오류: ${err.message}</p>`;
+    }
+  }
+
+  async function submitDetailUpdate() {
+    if (!selectedSearchFileId) return;
+
+    const rawOverview = document.getElementById('detailOverviewEdit').value;
+    const overviewList = rawOverview.split('\n').map(s => s.trim()).filter(s => s.length > 0);
+    const newFolder = normalizeArchivePath(document.getElementById('detailFolderPath').value);
+
+    try {
+      const summaryRes = await fetch(`/api/v1/documents/${selectedSearchFileId}/summary`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ overview_summary: overviewList })
+      });
+      const summaryData = await summaryRes.json();
+      if (!summaryRes.ok || !summaryData.success) {
+        alert(summaryData.detail || '요약 저장에 실패했습니다.');
+        return;
+      }
+
+      const moveRes = await fetch(`/api/v1/documents/${selectedSearchFileId}/folder`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ new_folder_path: newFolder })
+      });
+      const moveData = await moveRes.json();
+      if (!moveRes.ok || !moveData.success) {
+        alert(moveData.detail || '파일 이동에 실패했습니다.');
+        return;
+      }
+
+      selectedFolderPath = newFolder;
+      highlightedFileId = selectedSearchFileId;
+      expandFolderAncestors(selectedFolderPath);
+      showToast('요약과 저장 경로를 반영했습니다.');
+      await refreshDepartmentDropdown();
+      await loadUnconfirmedWorkList();
+      await refreshFolderTree();
+      await executeSearch();
+    } catch (err) {
+      alert('상세 요약 저장 중 오류: ' + err.message);
+    }
+  }
+
+  async function submitDetailDelete() {
+    if (!selectedSearchFileId) return;
+    if (!confirm('선택한 문서의 파일과 DB 자료를 삭제합니다. 계속하시겠습니까?')) return;
+
+    try {
+      const fileId = selectedSearchFileId;
+      const res = await fetch(`/api/v1/documents/${fileId}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        alert(data.detail || '삭제에 실패했습니다.');
+        return;
+      }
+
+      selectedSearchFileId = null;
+      highlightedFileId = null;
+      showToast('문서가 삭제되었습니다.');
+      await refreshDepartmentDropdown();
+      await loadUnconfirmedWorkList();
+      await refreshFolderTree();
+      await executeSearch();
+    } catch (err) {
+      alert('삭제 중 서버 오류 발생: ' + err.message);
+    }
+  }
+
+  async function openSummaryModal(fileId) {
+    activeModalFileId = fileId;
+    try {
+      const res = await fetch(`/api/v1/documents/${fileId}/result`);
+      const resData = await res.json();
+
+      if (!res.ok || !resData.success) {
+        alert('상세 정보를 불러올 수 없습니다.');
+        return;
+      }
+
+      const data = resData.data;
+      modalResultData = data;
+      const sData = data.summary_data || {};
+      const archInfo = data.archiving_info || {};
+
+      document.getElementById('modalOverviewEdit').value = (sData.document_overview || []).join('\n');
+      if (document.getElementById('modalSummaryText')) {
+        document.getElementById('modalSummaryText').value = (sData.document_overview || []).join('\n');
+      }
+      setKeywordInputs('modal', (data.analysis_data || {}).key_keywords || {});
+      document.getElementById('modalDepartment').value = data.department || '디지털혁신팀';
+      document.getElementById('modalFolderPath').value = displayArchivePath(archInfo.recommended_folder || '');
+      document.getElementById('folderRecommendList').innerHTML = '';
+      if (document.getElementById('modalDeptRecommendList')) {
+        document.getElementById('modalDeptRecommendList').innerHTML = '';
+      }
+
+      const detailDiv = document.getElementById('modalDetailContent');
+      const valResult = data.validation_result || {};
+      detailDiv.innerHTML = `
+        <div style="background: rgba(15, 23, 42, 0.4); border: 1px solid var(--card-border); border-radius: 8px; padding: 0.9rem;">
+          <h4 style="font-size: 0.9rem; color: #a78bfa; margin-bottom: 0.4rem;">🛡️ AI 문서 검증 리포트</h4>
+          <p style="font-size: 0.85rem; color: var(--text-main); margin-bottom: 0.3rem;"><strong>신뢰도 점수:</strong> <span style="color:#34d399; font-weight:bold;">${valResult.confidence_score || 95}점</span> (${valResult.validation_status || 'PASSED'})</p>
+          <p style="font-size: 0.83rem; color: var(--text-sub); margin:0;">${escapeHtml(valResult.verification_summary || '문서 검증 파이프라인을 성공적으로 통과하였습니다.')}</p>
+        </div>
+      `;
+
+      document.getElementById('summaryModal').style.display = 'flex';
+
+    } catch (err) {
+      alert('상세 요약 모달 로딩 에러: ' + err.message);
+    }
+  }
+
+  async function loadModalDepartmentRecommend() {
+    if (!activeModalFileId) return;
+    const listDiv = document.getElementById('modalDeptRecommendList');
+    if (!listDiv) return;
+    listDiv.innerHTML = '<span style="font-size:0.8rem; color:var(--text-sub);">AI 부서 분석 중...</span>';
+
+    try {
+      const res = await fetch(`/api/v1/documents/${activeModalFileId}/recommend-department`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success && data.recommendations && data.recommendations.length > 0) {
+        listDiv.innerHTML = data.recommendations.map(dept => 
+          `<button type="button" class="btn-action" onclick="document.getElementById('modalDepartment').value='${escapeHtml(dept)}'" style="margin:0.15rem; width:auto; font-size:0.75rem; padding:0.25rem 0.5rem; background:rgba(59,130,246,0.2); border:1px solid #3b82f6; color:#93c5fd;">${escapeHtml(dept)}</button>`
+        ).join('');
+      } else {
+        listDiv.innerHTML = '<span style="font-size:0.8rem; color:var(--text-sub);">추천된 부서가 없습니다.</span>';
+      }
+    } catch (err) {
+      listDiv.innerHTML = `<span style="font-size:0.8rem; color:#f87171;">추천 실패: ${escapeHtml(err.message)}</span>`;
+    }
+  }
+
+  function closeModal() {
+    document.getElementById('summaryModal').style.display = 'none';
+    document.getElementById('folderRecommendList').innerHTML = '';
+    if (document.getElementById('modalDeptRecommendList')) {
+      document.getElementById('modalDeptRecommendList').innerHTML = '';
+    }
+    activeModalFileId = null;
+  }
+
+  async function submitModalSave() {
+    if (!activeModalFileId) return;
+
+    const overviewInput = document.getElementById('modalSummaryText') || document.getElementById('modalOverviewEdit');
+    const rawOverview = overviewInput ? overviewInput.value : '';
+    const overviewList = rawOverview.split('\n').map(s => s.trim()).filter(s => s.length > 0);
+    const dept = document.getElementById('modalDepartment').value.trim();
+    const editedResults = buildEditedResults(modalResultData, 'modal');
+    editedResults.summary_data.document_overview = overviewList;
+    if (dept) editedResults.department = dept;
+
+    const newFolder = document.getElementById('modalFolderPath').value.trim();
+
+    try {
+      const resResults = await fetch(`/api/v1/documents/${activeModalFileId}/results`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editedResults)
+      });
+      const dataResults = await resResults.json();
+      if (!resResults.ok || !dataResults.success) {
+        alert(dataResults.detail || 'DB 내용 수정에 실패했습니다.');
+        return;
+      }
+
+      let moveMsg = '';
+      if (newFolder) {
+        const resFolder = await fetch(`/api/v1/documents/${activeModalFileId}/folder`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ new_folder_path: newFolder })
+        });
+        const dataFolder = await resFolder.json();
+        if (resFolder.ok && dataFolder.success) {
+          moveMsg = dataFolder.message;
+        } else {
+          alert('저장 경로는 이동하지 못했습니다: ' + (dataFolder.detail || '오류'));
+        }
+      }
+
+      showToast(moveMsg || '문서 요약 및 아카이빙 저장이 완료되었습니다.');
+      closeModal();
+      await refreshDepartmentDropdown();
+      await loadUnconfirmedWorkList();
+      executeSearch();
+      refreshFolderTree();
+    } catch (err) {
+      alert('저장 처리 중 에러: ' + err.message);
+    }
+  }
+
+  async function submitModalUpdate() {
+    await submitModalSave();
+  }
+
+  function submitModalDownload() {
+    if (!activeModalFileId) return;
+    window.location.href = `/api/v1/documents/${activeModalFileId}/download`;
+  }
+
+  async function submitModalMove() {
+    await submitModalSave();
+  }
+
+  function getInputValue(id, fallback = '') {
+    const el = document.getElementById(id);
+    return el ? (el.value || '').trim() : fallback;
+  }
+
+  async function loadFolderRecommend() {
+    if (!activeModalFileId) return;
+    const listDiv = document.getElementById('folderRecommendList');
+    if (!listDiv) return;
+    listDiv.innerHTML = '<span style="color:var(--text-sub); font-size:0.8rem;">추천 경로 분석 중...</span>';
+
+    try {
+      const folders = await loadArchiveFolderPaths();
+      const overviewText = getInputValue('modalSummaryText') || getInputValue('modalOverviewEdit');
+      const res = await fetch(`/api/v1/documents/${activeModalFileId}/recommend-folder`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          summary: overviewText.split('\n').filter(Boolean),
+          purpose: getInputValue('modalPurpose'),
+          message: getInputValue('modalConclusion'),
+          keywords: readKeywordInputs('modal'),
+          folders
+        })
+      });
+      const data = await readJsonResponse(res);
+      if (!res.ok || !data.success || !data.recommendations || data.recommendations.length === 0) {
+        listDiv.innerHTML = '<span style="color:var(--text-sub); font-size:0.8rem;">추천 가능한 경로가 없습니다.</span>';
+        return;
+      }
+
+      const top3 = data.recommendations.slice(0, 3);
+      listDiv.innerHTML = top3.map(r => `
+        <button type="button" class="btn-action" onclick="applyRecommendedFolder('${escapeHtml(r.folder_path)}')"
+          style="margin:0.15rem; width:auto; font-size:0.75rem; padding:0.25rem 0.5rem; background:rgba(99,102,241,0.2); border:1px solid #6366f1; color:#c7d2fe;">
+          📁 ${escapeHtml(displayArchivePath(r.folder_path))}
+        </button>
+      `).join('');
+    } catch (err) {
+      listDiv.innerHTML = `<span style="color:#f87171; font-size:0.8rem;">추천 실패: ${escapeHtml(err.message)}</span>`;
+    }
+  }
+
+  function applyRecommendedFolder(folderPath) {
+    document.getElementById('modalFolderPath').value = folderPath;
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // AI 추천 부서 드롭다운
+  // ─────────────────────────────────────────────────────────────
+  function toggleAiDeptDropdown(event) {
+    event.stopPropagation();
+    const btn = document.getElementById('btnAiDeptRecommend');
+    const dropdown = document.getElementById('aiDeptDropdown');
+    if (!btn || !dropdown) return;
+
+    const isVisible = dropdown.style.display !== 'none';
+    if (isVisible) {
+      dropdown.style.display = 'none';
+      return;
+    }
+
+    // 드롭다운 항목 구성
+    const depts = JSON.parse(btn.dataset.departments || '[]');
+    dropdown.innerHTML = '';
+    if (depts.length === 0) {
+      dropdown.innerHTML = '<div style="padding:0.7rem 1rem; color:var(--text-sub); font-size:0.82rem;">추천 부서가 없습니다.</div>';
+    } else {
+      depts.forEach(dept => {
+        const item = document.createElement('div');
+        item.textContent = `AI가 추천한 부서: ${dept}`;
+        item.style.cssText = [
+          'padding:0.65rem 1rem',
+          'font-size:0.83rem',
+          'cursor:pointer',
+          'color:var(--text-main, #e2e8f0)',
+          'border-bottom:1px solid var(--border, #2d3748)',
+          'transition:background 0.15s',
+        ].join(';');
+        item.addEventListener('mouseenter', () => item.style.background = 'var(--hover-bg, rgba(96,165,250,0.12))');
+        item.addEventListener('mouseleave', () => item.style.background = '');
+        item.addEventListener('click', () => selectAiDept(dept));
+        dropdown.appendChild(item);
+      });
+      // 마지막 항목 border 제거
+      if (dropdown.lastElementChild) {
+        dropdown.lastElementChild.style.borderBottom = 'none';
+      }
+    }
+
+    dropdown.style.display = 'block';
+
+    // 외부 클릭 시 닫기
+    const closeHandler = (e) => {
+      if (!dropdown.contains(e.target) && e.target !== btn) {
+        dropdown.style.display = 'none';
+        document.removeEventListener('click', closeHandler);
+      }
+    };
+    setTimeout(() => document.addEventListener('click', closeHandler), 0);
+  }
+
+  function selectAiDept(dept) {
+    const input = document.getElementById('editDepartment');
+    if (input) input.value = dept;
+    const dropdown = document.getElementById('aiDeptDropdown');
+    if (dropdown) dropdown.style.display = 'none';
+  }
+
+  async function loadUploadFolderRecommend() {
+    if (!currentFileId || !currentResultData) return;
+    const listDiv = document.getElementById('uploadFolderRecommendList');
+    if (!listDiv) return;
+    listDiv.innerHTML = '<span style="color:var(--text-sub); font-size:0.8rem;">추천 경로 분석 중...</span>';
+    try {
+      const overviewText = getInputValue('editOverview');
+      const res = await fetch(`/api/v1/documents/${currentFileId}/recommend-folder`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          summary: overviewText.split('\n').filter(Boolean),
+          purpose: getInputValue('editPurpose'),
+          message: getInputValue('editConclusion'),
+          keywords: readKeywordInputs('edit'),
+          folders: await loadArchiveFolderPaths()
+        })
+      });
+      const data = await readJsonResponse(res);
+      if (!res.ok || !data.success || !data.recommendations || data.recommendations.length === 0) {
+        listDiv.innerHTML = '<span style="color:var(--text-sub); font-size:0.8rem;">추천 가능한 경로가 없습니다.</span>';
+        return;
+      }
+      const top3 = data.recommendations.slice(0, 3);
+      listDiv.innerHTML = top3.map(r => `<button type="button" class="btn-action" onclick="const input = document.getElementById('editFolder'); if(input) input.value='${escapeHtml(displayArchivePath(r.folder_path))}';" style="margin:0.15rem; width:auto; font-size:0.75rem; padding:0.25rem 0.5rem; background:rgba(99,102,241,0.2); border:1px solid #6366f1; color:#c7d2fe;">📁 ${escapeHtml(displayArchivePath(r.folder_path))}</button>`).join('');
+    } catch (err) {
+      listDiv.innerHTML = `<span style="color:#f87171; font-size:0.8rem;">오류: ${escapeHtml(err.message)}</span>`;
+    }
+  }
+
+  async function loadArchiveFolderPaths() {
+    const res = await fetch('/api/v1/documents/folder-tree');
+    const data = await res.json();
+    const paths = new Set(['output']);
+    const visit = node => {
+      if (!node) return;
+      if (node.path) paths.add(normalizeArchivePath(node.path));
+      Object.values(node.children || {}).forEach(visit);
+    };
+    Object.values(data.folders || {}).forEach(visit);
+    return [...paths];
+  }
+
+  async function performDocumentDelete(fileId, confirmPrompt) {
+    if (confirmPrompt && !confirm(confirmPrompt)) return false;
+
+    try {
+      let res = await fetch(`/api/v1/documents/${fileId}`, { method: 'DELETE' });
+      let data = await res.json();
+
+      if (res.status === 409 || data.file_missing) {
+        const approveDbOnly = confirm('⚠️ 원본 파일이 서버(파일시스템)에 존재하지 않습니다.\n데이터(DB 레코드)만 삭제하시겠습니까?');
+        if (!approveDbOnly) return false;
+
+        res = await fetch(`/api/v1/documents/${fileId}?force_db_only=true`, { method: 'DELETE' });
+        data = await res.json();
+      }
+
+      if (res.ok && data.success) {
+        return true;
+      } else {
+        alert('삭제 실패: ' + (data.detail || data.message || '오류 발생'));
+        return false;
+      }
+    } catch (err) {
+      alert('삭제 처리 중 오류: ' + err.message);
+      return false;
+    }
+  }
+
+  async function submitModalDelete() {
+    if (!activeModalFileId) return;
+    const ok = await performDocumentDelete(activeModalFileId, '이 문서의 DB 레코드 및 아카이빙 원본 파일을 삭제합니다. 이 작업은 되돌릴 수 없습니다. 계속하시겠습니까?');
+    if (ok) {
+      showToast('문서가 성공적으로 삭제되었습니다.');
+      closeModal();
+      await refreshDepartmentDropdown();
+      await loadUnconfirmedWorkList();
+      executeSearch();
+      refreshFolderTree();
+    }
+  }
+
+  // =================================================================
+  // Multi-file & Folder Upload Pipeline + Work List Logic
+  // =================================================================
+  const BATCH_ALLOWED_EXTENSIONS = ['.pdf', '.docx', '.txt', '.hwp', '.hwpx', '.pptx'];
+
+  let unsupportedFileList = [];
+
+  function formatBytes(bytes) {
+    if (bytes === 0 || !bytes) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  }
+
+  function formatFileDate(timestamp) {
+    if (!timestamp) return '-';
+    const d = new Date(timestamp);
+    if (isNaN(d.getTime())) return '-';
+    const pad = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  }
+
+  function isFileSupported(file) {
+    if (!file || !file.name) return false;
+    const name = file.name.toLowerCase();
+    return BATCH_ALLOWED_EXTENSIONS.some(ext => name.endsWith(ext));
+  }
+
+  function addUnsupportedFiles(files) {
+    if (!files || files.length === 0) return;
+    Array.from(files).forEach(file => {
+      const fullPath = file.webkitRelativePath || file.name || '-';
+      let folderPath = '-';
+      if (fullPath.includes('/')) {
+        folderPath = fullPath.substring(0, fullPath.lastIndexOf('/'));
+      } else if (fullPath.includes('\\')) {
+        folderPath = fullPath.substring(0, fullPath.lastIndexOf('\\'));
+      }
+      unsupportedFileList.push({
+        path: folderPath,
+        name: file.name,
+        date: formatFileDate(file.lastModified),
+        size: formatBytes(file.size)
+      });
+    });
+    renderUnsupportedFileList();
+  }
+
+  function renderUnsupportedFileList() {
+    const tbody = document.getElementById('unsupportedTableBody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+
+    if (unsupportedFileList.length === 0) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="4" style="text-align: center; color: var(--text-sub); padding: 1.8rem;">
+            등록된 처리 불가 파일이 없습니다. (지원 포맷: PDF, DOCX, TXT, HWP, HWPX, PPTX)
+          </td>
+        </tr>
+      `;
+      return;
+    }
+
+    unsupportedFileList.forEach(item => {
+      const tr = document.createElement('tr');
+      tr.style.borderBottom = '1px solid var(--card-border)';
+      tr.innerHTML = `
+        <td style="padding: 0.6rem 0.5rem; color: var(--text-sub); font-size: 0.83rem; word-break: break-all;">📁 ${escapeHtml(item.path)}</td>
+        <td style="padding: 0.6rem 0.5rem; font-weight: 500; color: #f87171; word-break: break-all;">⚠️ ${escapeHtml(item.name)}</td>
+        <td style="padding: 0.6rem 0.5rem; color: var(--text-sub); font-size: 0.83rem;">${escapeHtml(item.date)}</td>
+        <td style="padding: 0.6rem 0.5rem; color: var(--text-sub); font-size: 0.83rem;">${escapeHtml(item.size)}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  function clearUnsupportedFiles() {
+    unsupportedFileList = [];
+    renderUnsupportedFileList();
+  }
+
+  function filterSupportedBatchFiles(fileList) {
+    return Array.from(fileList).filter(isFileSupported);
+  }
+
+  async function handleBatchFileSelect(fileList) {
+    if (!fileList || fileList.length === 0) return;
+
+    const allFiles = Array.from(fileList);
+    const validFiles = allFiles.filter(isFileSupported);
+    const unsupportedFiles = allFiles.filter(f => !isFileSupported(f));
+
+    if (unsupportedFiles.length > 0) {
+      addUnsupportedFiles(unsupportedFiles);
+    }
+
+    if (validFiles.length === 0) {
+      alert(`지원하지 않는 파일 형식입니다. (${unsupportedFiles.length}개 파일이 하단 처리 불가 파일 리스트로 분류되었습니다.)`);
+      return;
+    }
+
+    // 1개 파일만 처리하는 경우: 기존 요약 화면(#resultSection)을 보여주고 사용자가 검토/수정 후 저장하도록 수행
+    if (validFiles.length === 1) {
+      selectedFile = validFiles[0];
+      fileSelectedInfo.textContent = `선택된 파일: ${selectedFile.name} (${(selectedFile.size / 1024).toFixed(1)} KB)`;
+      fileSelectedInfo.style.color = 'var(--accent-blue)';
+      fileSelectedInfo.style.display = 'block';
+      btnAnalyze.disabled = false;
+
+      fileInput.value = '';
+      const folderInput = document.getElementById('folderInput');
+      if (folderInput) folderInput.value = '';
+
+      await submitAnalysis();
+      return;
+    }
+
+    // 2개 이상 다중 파일 처리하는 경우: 자동 분석 후 다중파일 작업리스트로 보관
+    document.getElementById('errorState').style.display = 'none';
+    document.getElementById('resultSection').style.display = 'none';
+    document.getElementById('toastSuccess').style.display = 'none';
+    document.getElementById('loadingState').style.display = 'block';
+
+    const loadingH3 = document.querySelector('#loadingState h3');
+    const loadingP = document.querySelector('#loadingState p');
+    const rawDept = (document.getElementById('uploadDepartmentInput').value || '').trim();
+    const dept = (!rawDept || rawDept === '부서 추천') ? '' : rawDept;
+    const rawFolder = document.getElementById('uploadFolderInput') ? (document.getElementById('uploadFolderInput').value || '').trim() : '';
+    const folder = (!rawFolder || rawFolder === '경로 추천') ? '' : rawFolder;
+
+    let successCount = 0;
+    let failCount = 0;
+
+    for (let i = 0; i < validFiles.length; i++) {
+      const file = validFiles[i];
+      if (loadingH3) loadingH3.textContent = `다중 파일 파이프라인 분석 및 보관 진행 중... (${i + 1} / ${validFiles.length})`;
+      if (loadingP) loadingP.textContent = `현재 처리 중인 문서: ${file.name}`;
+
+      const formData = new FormData();
+      formData.append('file', file);
+      if (dept) formData.append('department', dept);
+      if (folder) formData.append('target_folder', folder);
+
+      try {
+        const response = await fetch('/api/v1/documents/analyze-auto', {
+          method: 'POST',
+          body: formData
+        });
+        const resData = await response.json();
+        if (response.ok && resData.success) {
+          successCount++;
+          await loadUnconfirmedWorkList();
+        } else {
+          failCount++;
+        }
+      } catch (err) {
+        failCount++;
+      }
+    }
+
+    document.getElementById('loadingState').style.display = 'none';
+    fileInput.value = '';
+    const folderInput = document.getElementById('folderInput');
+    if (folderInput) folderInput.value = '';
+    showToast(`총 ${successCount}개 문서가 분석되어 다중파일 작업리스트에 추가되었습니다.${failCount > 0 ? ` (${failCount}개 실패)` : ''}`);
+    await loadUnconfirmedWorkList();
+    await refreshDepartmentDropdown();
+  }
+
+  async function loadUnconfirmedWorkList() {
+    try {
+      const res = await fetch('/api/v1/documents/unconfirmed');
+      const data = await res.json();
+      const tbody = document.getElementById('workListTableBody');
+      if (!tbody) return;
+      tbody.innerHTML = '';
+
+      if (!data.data || data.data.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="6" style="text-align: center; color: var(--text-sub); padding: 1.8rem;">
+              등록된 미확인 다중파일 작업 문서가 없습니다.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      data.data.forEach(item => {
+        tbody.appendChild(renderWorkItemRow(item));
+      });
+    } catch (err) {
+      console.error('Failed to load unconfirmed work list:', err);
+    }
+  }
+
+  function renderWorkItemRow(item) {
+    const tr = document.createElement('tr');
+    tr.style.borderBottom = '1px solid var(--card-border)';
+    tr.id = `workRow_${item.file_id}`;
+
+    const fileName = item.renamed_filename || item.original_filename;
+    const fileMissing = !!item.file_missing;
+    const nameColor = fileMissing ? '#ef4444' : '#60a5fa';
+    const nameSuffix = fileMissing ? ' /파일누락' : '';
+
+    const actionButtons = fileMissing
+      ? `<button class="btn-action" type="button" style="width:auto; margin:0; padding:0.35rem 0.6rem; font-size:0.78rem; background:linear-gradient(135deg, var(--accent-rose), #dc2626); white-space:nowrap;" onclick="deleteSingleWorkItem('${item.file_id}', true)">삭제</button>`
+      : `<button class="btn-action" type="button" style="width:auto; margin:0; padding:0.35rem 0.6rem; font-size:0.78rem; background:#3b82f6; white-space:nowrap;" onclick="showWorkItemDetail('${item.file_id}')">상세</button>
+         <button class="btn-action btn-save" type="button" style="width:auto; margin:0; padding:0.35rem 0.6rem; font-size:0.78rem; white-space:nowrap;" onclick="confirmSingleWorkItem('${item.file_id}')">저장</button>
+         <button class="btn-action" type="button" style="width:auto; margin:0; padding:0.35rem 0.6rem; font-size:0.78rem; background:linear-gradient(135deg, var(--accent-rose), #dc2626); white-space:nowrap;" onclick="deleteSingleWorkItem('${item.file_id}', false)">삭제</button>`;
+
+    tr.innerHTML = `
+      <td style="padding: 0.6rem 0.5rem; text-align: center;">
+        <input type="checkbox" class="worklist-checkbox" value="${item.file_id}">
+      </td>
+      <td style="padding: 0.6rem 0.5rem;">
+        <input type="text" class="form-input" id="workFolder_${item.file_id}" value="${escapeHtml(displayArchivePath(item.saved_folder))}" style="margin:0; font-size:0.83rem; padding:0.4rem 0.6rem;">
+      </td>
+      <td style="padding: 0.6rem 0.5rem;">
+        <input type="text" class="form-input" id="workDept_${item.file_id}" value="${escapeHtml(item.department || '디지털혁신팀')}" style="margin:0; font-size:0.83rem; padding:0.4rem 0.6rem;">
+      </td>
+      <td style="padding: 0.6rem 0.5rem;">
+        <span style="font-weight:500; color:${nameColor}; word-break:break-all;">📄 ${escapeHtml(fileName)}${nameSuffix}</span>
+      </td>
+      <td style="padding: 0.6rem 0.5rem;">
+        <input type="text" class="form-input" id="workSummary_${item.file_id}" value="${escapeHtml(item.one_line_summary || '')}" style="margin:0; font-size:0.83rem; padding:0.4rem 0.6rem;">
+      </td>
+      <td style="padding: 0.6rem 0.5rem; text-align: center; white-space: nowrap;">
+        <div style="display:flex; gap:0.35rem; justify-content:center; white-space:nowrap;">
+          ${actionButtons}
+        </div>
+      </td>
+    `;
+    return tr;
+  }
+
+  async function readJsonResponse(res) {
+    const contentType = res.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      try {
+        return await res.json();
+      } catch (e) {
+        return { success: false, detail: '서버 응답을 JSON으로 파싱할 수 없습니다.' };
+      }
+    } else {
+      const text = await res.text();
+      return { success: false, detail: text || `서버 오류가 발생했습니다. (상태 코드: ${res.status})` };
+    }
+  }
+
+  async function showWorkItemDetail(fileId) {
+    try {
+      const res = await fetch(`/api/v1/documents/${fileId}/result`);
+      const resData = await readJsonResponse(res);
+      if (!res.ok || !resData.success) {
+        alert(resData.detail || '상세 요약 분석 결과를 불러올 수 없습니다.');
+        return;
+      }
+      currentFileId = fileId;
+      renderResult(resData.data);
+      switchTab('upload');
+      const resultSection = document.getElementById('resultSection');
+      if (resultSection) {
+        resultSection.scrollIntoView({ behavior: 'smooth' });
+      }
+    } catch (err) {
+      alert('상세 조회 중 오류 발생: ' + err.message);
+    }
+  }
+
+  function toggleSelectAllWorkList(checked) {
+    document.querySelectorAll('.worklist-checkbox').forEach(cb => cb.checked = checked);
+  }
+
+  async function confirmSingleWorkItem(fileId) {
+    const folderInput = document.getElementById(`workFolder_${fileId}`);
+    const summaryInput = document.getElementById(`workSummary_${fileId}`);
+    const deptInput = document.getElementById(`workDept_${fileId}`);
+    const folder = folderInput ? folderInput.value.trim() : '';
+    const summary = summaryInput ? summaryInput.value.trim() : '';
+    const dept = deptInput ? deptInput.value.trim() : '';
+
+    try {
+      const res = await fetch(`/api/v1/documents/${fileId}/confirm`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          folder_path: folder,
+          document_overview: [summary],
+          department: dept
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showToast('문서가 성공적으로 저장(확정)되었습니다.');
+        const row = document.getElementById(`workRow_${fileId}`);
+        if (row) row.remove();
+        await loadUnconfirmedWorkList();
+        await refreshDepartmentDropdown();
+      } else {
+        alert('저장 실패: ' + (data.detail || data.message || '오류 발생'));
+      }
+    } catch (err) {
+      alert('저장 처리 중 오류: ' + err.message);
+    }
+  }
+
+  async function deleteSingleWorkItem(fileId, isFileMissing = false) {
+    if (isFileMissing) {
+      if (!confirm('원본 파일이 누락된 항목입니다. DB 데이터(레코드)를 삭제하시겠습니까?')) return;
+      try {
+        const res = await fetch(`/api/v1/documents/${fileId}?force_db_only=true`, { method: 'DELETE' });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          showToast('DB 데이터가 성공적으로 삭제되었습니다.');
+          const row = document.getElementById(`workRow_${fileId}`);
+          if (row) row.remove();
+          await loadUnconfirmedWorkList();
+          await refreshDepartmentDropdown();
+          refreshFolderTree();
+        } else {
+          alert('삭제 실패: ' + (data.detail || data.message || '오류 발생'));
+        }
+      } catch (err) {
+        alert('삭제 처리 중 오류: ' + err.message);
+      }
+      return;
+    }
+
+    const ok = await performDocumentDelete(fileId, '정말로 이 문서를 삭제하시겠습니까? (삭제 후 복구 불가)');
+    if (ok) {
+      showToast('문서가 성공적으로 삭제되었습니다.');
+      const row = document.getElementById(`workRow_${fileId}`);
+      if (row) row.remove();
+      await loadUnconfirmedWorkList();
+      await refreshDepartmentDropdown();
+      refreshFolderTree();
+    }
+  }
+
+  async function batchConfirmWorkList() {
+    const checkedBoxes = Array.from(document.querySelectorAll('.worklist-checkbox:checked'));
+    if (checkedBoxes.length === 0) {
+      alert('저장할 문서를 목록에서 선택하세요.');
+      return;
+    }
+
+    const items = checkedBoxes.map(cb => {
+      const fileId = cb.value;
+      const folderInput = document.getElementById(`workFolder_${fileId}`);
+      const summaryInput = document.getElementById(`workSummary_${fileId}`);
+      const deptInput = document.getElementById(`workDept_${fileId}`);
+      return {
+        file_id: fileId,
+        folder_path: folderInput ? folderInput.value.trim() : '',
+        document_overview: summaryInput ? [summaryInput.value.trim()] : [],
+        department: deptInput ? deptInput.value.trim() : ''
+      };
+    });
+
+    try {
+      const res = await fetch('/api/v1/documents/batch-confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showToast(`${data.success_count}개 문서가 성공적으로 일괄 저장되었습니다.`);
+        await loadUnconfirmedWorkList();
+        await refreshDepartmentDropdown();
+      } else {
+        alert('일괄 저장 실패: ' + (data.detail || data.message));
+      }
+    } catch (err) {
+      alert('일괄 저장 처리 중 오류: ' + err.message);
+    }
+  }
+
+  async function batchDeleteWorkList() {
+    const checkedBoxes = Array.from(document.querySelectorAll('.worklist-checkbox:checked'));
+    if (checkedBoxes.length === 0) {
+      alert('삭제할 문서를 목록에서 선택하세요.');
+      return;
+    }
+
+    if (!confirm(`선택한 ${checkedBoxes.length}개 문서를 삭제하시겠습니까? (삭제 후 복구 불가)`)) return;
+
+    const fileIds = checkedBoxes.map(cb => cb.value);
+
+    try {
+      const res = await fetch('/api/v1/documents/batch-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ file_ids: fileIds })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showToast(`${data.success_count}개 문서가 성공적으로 일괄 삭제되었습니다.`);
+        await loadUnconfirmedWorkList();
+        await refreshDepartmentDropdown();
+      } else {
+        alert('일괄 삭제 실패: ' + (data.detail || data.message));
+      }
+    } catch (err) {
+      alert('일괄 삭제 처리 중 오류: ' + err.message);
+    }
+  }
+
+  // Load unconfirmed work list & department dropdown on startup
+  document.addEventListener('DOMContentLoaded', () => {
+    loadUnconfirmedWorkList();
+    refreshDepartmentDropdown();
+  });
+</script>
+
+</body>
+</html>
