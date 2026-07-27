@@ -4,8 +4,10 @@ import tempfile
 from pathlib import Path
 
 from app.core.config import settings
-from app.core.exceptions import unprocessable
+from app.core.exceptions import DocumentProcessingError, unprocessable
 from app.utils.file_utils import clean_text
+
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tif", ".tiff"}
 
 
 def _tesseract_options() -> tuple[object, str]:
@@ -83,42 +85,69 @@ def _extract_legacy(path: Path) -> str:
         return text_path.read_text(encoding="utf-8", errors="replace")
 
 
-def extract_text(path: Path) -> str:
-    suffix = path.suffix.lower()
+def _extract_txt(path: Path) -> str:
     try:
-        if suffix == ".txt":
-            try:
-                raw = path.read_text(encoding="utf-8-sig")
-            except UnicodeDecodeError:
-                raw = path.read_text(encoding="cp949")
-        elif suffix == ".pdf":
-            from pypdf import PdfReader
-            raw = "\n".join(page.extract_text() or "" for page in PdfReader(str(path)).pages)
-            if not clean_text(raw):
-                raw = _ocr_pdf(path)
-        elif suffix == ".docx":
-            from docx import Document
-            document = Document(str(path))
-            paragraphs = [paragraph.text for paragraph in document.paragraphs]
-            tables = [cell.text for table in document.tables for row in table.rows for cell in row.cells]
-            raw = "\n".join(paragraphs + tables)
-        elif suffix == ".pptx":
-            from pptx import Presentation
-            presentation = Presentation(str(path))
-            raw = "\n".join(shape.text for slide in presentation.slides for shape in slide.shapes if hasattr(shape, "text"))
-        elif suffix == ".hwpx":
-            from hwpx import HwpxDocument
-            raw = HwpxDocument.open(path).export_text()
-        elif suffix in {".jpg", ".jpeg", ".png", ".tif", ".tiff"}:
-            raw = _ocr_image(path)
-        else:
-            raw = _extract_legacy(path)
+        return path.read_text(encoding="utf-8-sig")
+    except UnicodeDecodeError:
+        return path.read_text(encoding="cp949")
+
+
+def _extract_pdf(path: Path) -> str:
+    from pypdf import PdfReader
+
+    extracted_text = "\n".join(page.extract_text() or "" for page in PdfReader(str(path)).pages)
+    return extracted_text if clean_text(extracted_text) else _ocr_pdf(path)
+
+
+def _extract_docx(path: Path) -> str:
+    from docx import Document
+
+    document = Document(str(path))
+    paragraphs = [paragraph.text for paragraph in document.paragraphs]
+    table_cells = [cell.text for table in document.tables for row in table.rows for cell in row.cells]
+    return "\n".join(paragraphs + table_cells)
+
+
+def _extract_pptx(path: Path) -> str:
+    from pptx import Presentation
+
+    presentation = Presentation(str(path))
+    return "\n".join(
+        shape.text
+        for slide in presentation.slides
+        for shape in slide.shapes
+        if hasattr(shape, "text")
+    )
+
+
+def _extract_hwpx(path: Path) -> str:
+    from hwpx import HwpxDocument
+
+    return HwpxDocument.open(path).export_text()
+
+
+def _extract_raw_text(path: Path) -> str:
+    extractors = {
+        ".txt": _extract_txt,
+        ".pdf": _extract_pdf,
+        ".docx": _extract_docx,
+        ".pptx": _extract_pptx,
+        ".hwpx": _extract_hwpx,
+    }
+    if path.suffix.lower() in IMAGE_EXTENSIONS:
+        return _ocr_image(path)
+    return extractors.get(path.suffix.lower(), _extract_legacy)(path)
+
+
+def extract_text(path: Path) -> str:
+    try:
+        raw_text = _extract_raw_text(path)
+    except DocumentProcessingError:
+        raise
     except Exception as error:
-        if hasattr(error, "status_code"):
-            raise
         raise unprocessable("문서를 읽을 수 없습니다. 파일 상태 또는 접근 권한을 확인해 주세요.") from error
 
-    text = clean_text(raw)
+    text = clean_text(raw_text)
     if not text:
         raise unprocessable("분석할 내용이 없는 문서입니다. 텍스트가 포함된 문서를 업로드해 주세요.")
     if len(text) > settings.max_text_length:

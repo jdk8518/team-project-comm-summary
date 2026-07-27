@@ -20,6 +20,7 @@ logs/
 tmp/
 temp/
 .test-run-tmp/
+.codex-test-tmp/
 
 # User-uploaded or operational documents
 other_docs/

@@ -22,7 +22,7 @@ class Settings:
             "회의록": self.project_root / "other_docs" / "meeting",
             "공문": self.project_root / "other_docs" / "official document",
             "보고서": self.project_root / "other_docs" / "report",
-            "공고문": self.project_root / "other_docs" / "announcement",
+            "공고문": self.project_root / "other_docs" / "public notice",
             "기타(예외)": self.project_root / "other_docs" / "others",
         }
 
