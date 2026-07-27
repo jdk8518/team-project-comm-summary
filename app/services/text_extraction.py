@@ -69,18 +69,50 @@ def _ocr_pdf(path: Path) -> str:
 
 
 def _extract_legacy(path: Path) -> str:
-    executable = shutil.which("soffice") or shutil.which("libreoffice")
+    executable = _find_libreoffice_executable()
     if not executable:
         raise unprocessable("DOC, HWP, PPT 파일은 LibreOffice가 설치된 환경에서만 분석할 수 있습니다.")
     with tempfile.TemporaryDirectory() as output_dir:
+        profile_dir = Path(output_dir) / "libreoffice-profile"
+        profile_url = profile_dir.resolve().as_uri()
         result = subprocess.run(
-            [executable, "--headless", "--convert-to", "txt:Text", "--outdir", output_dir, str(path)],
+            [
+                executable,
+                "--headless",
+                f"-env:UserInstallation={profile_url}",
+                "--convert-to",
+                "txt:Text",
+                "--outdir",
+                output_dir,
+                str(path),
+            ],
             capture_output=True, text=True, timeout=60, check=False,
         )
-        text_path = Path(output_dir) / f"{path.stem}.txt"
-        if result.returncode != 0 or not text_path.exists():
-            raise unprocessable("문서를 읽을 수 없습니다. LibreOffice 변환 결과와 파일 권한을 확인해 주세요.")
+        converted_files = list(Path(output_dir).glob("*.txt"))
+        if result.returncode != 0 or not converted_files:
+            if path.suffix.lower() == ".hwp":
+                raise unprocessable("이 HWP 파일은 LibreOffice에서 텍스트로 변환할 수 없습니다. HWPX 또는 PDF로 저장한 뒤 다시 업로드해 주세요.")
+            raise unprocessable("LibreOffice가 문서를 텍스트로 변환하지 못했습니다. 파일이 손상·암호화되지 않았는지 확인하거나 PDF 또는 DOCX로 다시 저장해 주세요.")
+        text_path = converted_files[0]
         return text_path.read_text(encoding="utf-8", errors="replace")
+
+
+def _find_libreoffice_executable() -> str | None:
+    """Return LibreOffice from PATH or its common Windows installation paths."""
+    executable = shutil.which("soffice") or shutil.which("libreoffice")
+    if executable:
+        return executable
+
+    windows_candidates = (
+        Path("C:/Program Files/LibreOffice/program/soffice.com"),
+        Path("C:/Program Files/LibreOffice/program/soffice.exe"),
+        Path("C:/Program Files (x86)/LibreOffice/program/soffice.com"),
+        Path("C:/Program Files (x86)/LibreOffice/program/soffice.exe"),
+    )
+    for candidate in windows_candidates:
+        if candidate.is_file():
+            return str(candidate)
+    return None
 
 
 def extract_text(path: Path) -> str:
