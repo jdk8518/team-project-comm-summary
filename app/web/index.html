@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>문서 분석 MVP</title>
+  <style>
+    :root { font-family: system-ui, sans-serif; color: #1e293b; background: #f8fafc; }
+    body { max-width: 1040px; margin: 0 auto; padding: 32px 20px 56px; } h1 { margin: 0 0 8px; } h2 { font-size: 1.1rem; margin: 0 0 14px; } h3 { font-size: .95rem; margin-top: 20px; }
+    .lead, .muted { color: #64748b; } .panel { margin-top: 16px; padding: 20px; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; }
+    .controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; } input[type=file], select, input[type=date] { max-width: 100%; padding: 9px; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; }
+    button { padding: 10px 16px; border: 0; border-radius: 8px; color: #fff; background: #2563eb; font-weight: 700; cursor: pointer; } button:disabled { background: #94a3b8; cursor: not-allowed; } button.secondary { color: #334155; background: #e2e8f0; } button.success { background: #15803d; }
+    .status { display: inline-flex; align-items: center; gap: 8px; } .spinner { width: 14px; height: 14px; border: 2px solid #bfdbfe; border-top-color: #2563eb; border-radius: 50%; animation: spin 1s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; } .item { padding: 12px; background: #f8fafc; border-radius: 8px; overflow-wrap: anywhere; } .label { display: block; margin-bottom: 4px; color: #64748b; font-size: .8rem; }
+    ul { margin: 0; padding-left: 20px; } li { margin: 6px 0; } .tag { display: inline-block; margin: 3px; padding: 4px 8px; color: #1d4ed8; background: #dbeafe; border-radius: 999px; font-size: .9rem; }
+    .notice { padding: 12px; color: #92400e; background: #fffbeb; border-left: 4px solid #f59e0b; } .passed { color: #166534; background: #f0fdf4; border-left-color: #16a34a; } .error { color: #991b1b; background: #fef2f2; border-left-color: #dc2626; }
+    .actions { display: flex; justify-content: flex-end; margin-top: 16px; } dialog { width: min(540px, calc(100% - 40px)); border: 0; border-radius: 14px; box-shadow: 0 20px 45px rgba(15, 23, 42, .25); } dialog::backdrop { background: rgba(15, 23, 42, .45); } .dialog-form { display: grid; gap: 14px; } .check { display: flex; gap: 8px; align-items: flex-start; font-size: .9rem; } .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; } [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <h1>문서 분석 MVP</h1>
+  <p class="lead">문서 한 개를 업로드해 분석·요약·검증 결과를 확인하고, 검토를 마친 결과를 Markdown 문서로 저장합니다.</p>
+
+  <section id="upload-panel" class="panel">
+    <h2>문서 파일 업로드</h2>
+    <div class="controls"><input id="file" type="file" accept=".pdf,.doc,.docx,.hwp,.hwpx,.ppt,.pptx,.txt,.jpg,.jpeg,.png,.tif,.tiff"><button id="analyze" type="button">분석·요약</button></div>
+    <p id="file-info" class="muted">파일을 한 개 선택해 주세요. 최대 10MB · PDF, Office, TXT, 이미지 파일을 지원합니다.</p>
+  </section>
+
+  <section id="processing" class="panel" hidden aria-live="polite"><span class="status"><span class="spinner"></span><span id="processing-message">처리 중입니다.</span></span></section>
+  <section id="error-panel" class="panel notice error" hidden aria-live="assertive"><strong id="error-title">요청을 완료하지 못했습니다.</strong><p id="error-message"></p><p id="error-guidance">파일 형식·크기·내용 및 AI 설정을 확인한 뒤 다시 시도해 주세요.</p><button id="back-to-upload" class="secondary" type="button">업로드 화면으로 이동</button></section>
+
+  <main id="result" hidden>
+    <section class="panel"><h2>문서 정보</h2><div id="document-info" class="grid"></div></section>
+    <section class="panel"><h2>분석 결과</h2><div id="analysis"></div></section>
+    <section class="panel"><h2>요약 결과</h2><div id="summary"></div></section>
+    <section class="panel"><h2>검증 결과</h2><div id="verification-status" class="notice"></div><div id="review-items"></div></section>
+    <section class="panel"><h2>결과 문서 저장</h2><p class="muted">문서특성과 기준일을 최종 확인한 뒤 저장합니다. 원본 파일은 변경되지 않습니다.</p><div class="actions"><button id="open-save" class="success" type="button">문서 저장</button></div></section>
+  </main>
+
+  <dialog id="save-dialog" aria-labelledby="save-title">
+    <form id="save-form" class="dialog-form">
+      <h2 id="save-title">분석 결과 문서 저장</h2>
+      <label>문서특성<select id="document-type" required><option value="회의록">회의록</option><option value="보고서">보고서</option><option value="공문">공문</option><option value="공고문">공고문</option><option value="기타(예외)">기타(예외)</option></select></label>
+      <label>기준일<input id="reference-date" type="date" required></label>
+      <div id="save-preview" class="notice" hidden></div>
+      <label class="check"><input id="review-confirmed" type="checkbox" required> 분석·요약·검증 결과를 검토했습니다.</label>
+      <label class="check"><input id="user-confirmed" type="checkbox" required> 선택한 문서특성과 기준일로 저장하는 것을 최종 확인합니다.</label>
+      <p id="save-message" class="muted" aria-live="polite"></p>
+      <div class="dialog-actions"><button id="cancel-save" class="secondary" type="button">취소</button><button id="confirm-save" class="success" type="submit">저장</button></div>
+    </form>
+  </dialog>
+
+  <script>
+    const fileInput = document.getElementById('file'), analyzeButton = document.getElementById('analyze'), processing = document.getElementById('processing'), processingMessage = document.getElementById('processing-message'), errorPanel = document.getElementById('error-panel'), errorMessage = document.getElementById('error-message'), result = document.getElementById('result'), saveDialog = document.getElementById('save-dialog');
+    let currentResult = null;
+    const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' })[char]);
+    const list = values => Array.isArray(values) && values.length ? `<ul>${values.map(value => `<li>${escapeHtml(value)}</li>`).join('')}</ul>` : '<p class="muted">제공된 정보가 없습니다.</p>';
+    const formatBytes = bytes => bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    async function request(url, options) {
+      if (window.location.protocol === 'file:') {
+        throw new Error('HTML 파일을 직접 열어 API에 연결할 수 없습니다. 터미널에서 "uvicorn app.main:app --reload"를 실행한 뒤 http://127.0.0.1:8000 으로 접속해 주세요.');
+      }
+      try {
+        const response = await fetch(url, options);
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.detail || `요청 중 오류가 발생했습니다. (HTTP ${response.status})`);
+        return data;
+      } catch (error) {
+        if (error instanceof TypeError && error.message === 'Failed to fetch') {
+          throw new Error('API 서버에 연결하지 못했습니다. "uvicorn app.main:app --reload" 실행 후 http://127.0.0.1:8000 으로 접속했는지 확인해 주세요.');
+        }
+        throw error;
+      }
+    }
+    function setProcessing(message) { processingMessage.textContent = message; processing.hidden = false; analyzeButton.disabled = true; }
+    function resetState() { processing.hidden = true; errorPanel.hidden = true; result.hidden = true; analyzeButton.disabled = false; currentResult = null; }
+    function showError(message) {
+      const errorTitle = document.getElementById('error-title');
+      const errorGuidance = document.getElementById('error-guidance');
+      processing.hidden = true; result.hidden = true; errorMessage.textContent = message;
+      if (message.includes('Poppler')) {
+        errorTitle.textContent = '파일 추출(OCR) 단계에서 오류가 발생했습니다.';
+        errorGuidance.textContent = '스캔 PDF는 Poppler와 Tesseract OCR이 필요합니다. 설치 후 pdftoppm과 tesseract 명령이 터미널에서 실행되는지 확인한 뒤 문서를 다시 업로드해 주세요. 결과 저장 단계의 오류가 아닙니다.';
+      } else if (message.includes('Tesseract')) {
+        errorTitle.textContent = '파일 추출(OCR) 단계에서 오류가 발생했습니다.';
+        errorGuidance.textContent = 'Tesseract OCR 엔진과 한국어 언어 데이터(kor)를 설치한 뒤 tesseract --list-langs 명령에서 kor가 보이는지 확인해 주세요.';
+      } else {
+        errorTitle.textContent = '요청을 완료하지 못했습니다.';
+        errorGuidance.textContent = '파일 형식·크기·내용 및 AI 설정을 확인한 뒤 다시 시도해 주세요.';
+      }
+      errorPanel.hidden = false; analyzeButton.disabled = false;
+    }
+    function render(data) {
+      const doc = data.document || {}, analysis = data.analysis || {}, summary = data.summary || {}, verification = data.verification || {};
+      document.getElementById('document-info').innerHTML = [['파일명', doc.file_name], ['파일 형식', doc.file_type], ['파일 크기', doc.file_size ? formatBytes(doc.file_size) : '확인 필요'], ['제목', doc.title], ['소속 기관', doc.organization], ['소속 부서', doc.department], ['기준 일자', doc.reference_date], ['처리 상태', data.status]].map(([label, value]) => `<div class="item"><span class="label">${label}</span>${escapeHtml(value || '확인 필요')}</div>`).join('');
+      document.getElementById('analysis').innerHTML = `<div class="grid"><div class="item"><span class="label">추천 문서특성</span>${escapeHtml(analysis.recommended_category || '확인 필요')}</div><div class="item"><span class="label">핵심 문장</span>${list(analysis.key_sentences)}</div><div class="item"><span class="label">결정·요청 사항</span>${list(analysis.decisions)}</div><div class="item"><span class="label">수치·기한</span>${list(analysis.numerical_values)}</div></div><h3>주요 키워드</h3>${Array.isArray(analysis.keywords) && analysis.keywords.length ? analysis.keywords.map(value => `<span class="tag">${escapeHtml(value)}</span>`).join('') : '<p class="muted">제공된 키워드가 없습니다.</p>'}`;
+      document.getElementById('summary').innerHTML = `<div class="grid"><div class="item"><span class="label">문서 개요</span>${escapeHtml(summary.document_overview || summary.background || '확인 필요')}</div><div class="item"><span class="label">문서 목적</span>${escapeHtml(summary.document_purpose || summary.main_content || '확인 필요')}</div><div class="item"><span class="label">결론 또는 핵심 메시지</span>${escapeHtml(summary.conclusion_or_key_message || summary.conclusion || '확인 필요')}</div></div><h3>주요 내용</h3>${list(summary.main_contents || summary.follow_up_actions)}`;
+      const status = document.getElementById('verification-status'); status.className = verification.passed ? 'notice passed' : 'notice'; status.innerHTML = `<strong>${verification.passed ? '검증 통과' : '확인 필요'}</strong><p>${escapeHtml(verification.revision_instruction || '원문과 결과를 함께 검토해 주세요.')}</p>`;
+      const issues = (verification.issues || []).map(issue => `<div class="item"><strong>${escapeHtml(issue.category)}</strong><p>이유: ${escapeHtml(issue.reason)}</p><p>원문 근거:</p>${list(issue.source_evidence)}<p>사람이 확인할 항목: ${escapeHtml(issue.human_check)}</p></div>`).join('');
+      const reviewItems = (summary.review_items || analysis.review_items || []).map(item => `<div class="item">${escapeHtml(item)}</div>`).join(''); document.getElementById('review-items').innerHTML = issues || reviewItems || '<p class="muted">추가 확인 항목이 없습니다.</p>'; result.hidden = false;
+    }
+    async function analyze() {
+      resetState(); const file = fileInput.files[0]; if (!file) return showError('분석할 문서 파일을 먼저 선택해 주세요.');
+      try { setProcessing('파일을 확인하고 텍스트를 추출하고 있습니다.'); const form = new FormData(); form.append('file', file); const extracted = await request('/api/v1/documents/extract', { method: 'POST', body: form }); setProcessing('AI가 문서를 분석하고 요약을 생성하고 있습니다.'); const analyzed = await request(`/api/v1/documents/${encodeURIComponent(extracted.document_id)}/analyze`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ categories: ['회의록', '보고서', '공문', '공고문'] }) }); setProcessing('원문과 분석·요약 결과를 검증하고 있습니다.'); const verification = await request('/api/v1/documents/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ document_id: extracted.document_id }) }); currentResult = { ...analyzed, document: { ...extracted, ...analyzed.document }, verification, status: 'SUCCESS' }; render(currentResult); } catch (error) { showError(error.message); } finally { processing.hidden = true; analyzeButton.disabled = false; }
+    }
+    async function updatePreview() { if (!currentResult) return; const preview = await request(`/api/v1/documents/${encodeURIComponent(currentResult.document_id)}/save-preview`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ document_type: document.getElementById('document-type').value, reference_date: document.getElementById('reference-date').value || null }) }); const target = document.getElementById('save-preview'); target.innerHTML = `저장 위치: ${escapeHtml(preview.directory)}<br>생성 파일: ${escapeHtml(preview.file_name)}`; target.hidden = false; }
+    fileInput.addEventListener('change', () => { const file = fileInput.files[0]; document.getElementById('file-info').textContent = file ? `${file.name} · ${formatBytes(file.size)}` : '파일을 한 개 선택해 주세요.'; });
+    analyzeButton.addEventListener('click', analyze); document.getElementById('back-to-upload').addEventListener('click', () => { errorPanel.hidden = true; document.getElementById('upload-panel').scrollIntoView({ behavior: 'smooth' }); fileInput.focus(); });
+    document.getElementById('open-save').addEventListener('click', () => { if (!currentResult) return; const type = currentResult.analysis?.recommended_category; const select = document.getElementById('document-type'); if ([...select.options].some(option => option.value === type)) select.value = type; document.getElementById('reference-date').value = currentResult.document?.reference_date || ''; document.getElementById('save-preview').hidden = true; document.getElementById('save-message').textContent = ''; document.getElementById('save-form').reset(); if ([...select.options].some(option => option.value === type)) select.value = type; document.getElementById('reference-date').value = currentResult.document?.reference_date || ''; saveDialog.showModal(); updatePreview().catch(error => { document.getElementById('save-message').textContent = error.message; }); });
+    document.getElementById('cancel-save').addEventListener('click', () => saveDialog.close()); document.getElementById('document-type').addEventListener('change', () => updatePreview().catch(error => { document.getElementById('save-message').textContent = error.message; })); document.getElementById('reference-date').addEventListener('change', () => updatePreview().catch(error => { document.getElementById('save-message').textContent = error.message; }));
+    document.getElementById('save-form').addEventListener('submit', async event => { event.preventDefault(); const button = document.getElementById('confirm-save'), message = document.getElementById('save-message'); button.disabled = true; message.textContent = '문서 저장 중입니다.'; try { const saved = await request(`/api/v1/documents/${encodeURIComponent(currentResult.document_id)}/save`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ document_type: document.getElementById('document-type').value, reference_date: document.getElementById('reference-date').value, review_confirmed: document.getElementById('review-confirmed').checked, user_confirmed: document.getElementById('user-confirmed').checked }) }); message.textContent = `저장했습니다: ${saved.path}`; document.getElementById('save-preview').innerHTML = `저장 완료: ${escapeHtml(saved.file_name)}<br>${escapeHtml(saved.path)}`; document.getElementById('save-preview').className = 'notice passed'; document.getElementById('save-preview').hidden = false; } catch (error) { message.textContent = error.message; } finally { button.disabled = false; } });
+  </script>
+</body>
+</html>
