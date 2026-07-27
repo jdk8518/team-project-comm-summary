@@ -8,6 +8,27 @@ from app.core.exceptions import unprocessable
 from app.utils.file_utils import clean_text
 
 
+def _tesseract_options() -> tuple[object, str]:
+    try:
+        import pytesseract
+    except ImportError as error:
+        raise unprocessable("이미지 OCR 패키지가 설치되지 않았습니다. requirements.txt의 OCR 의존성을 설치해 주세요.") from error
+
+    if settings.tesseract_cmd:
+        executable = Path(settings.tesseract_cmd)
+        if not executable.is_file():
+            raise unprocessable("TESSERACT_CMD에 지정한 실행 파일을 찾을 수 없습니다. .env의 경로를 확인해 주세요.")
+        pytesseract.pytesseract.tesseract_cmd = str(executable)
+
+    config = ""
+    if settings.tessdata_dir:
+        data_directory = Path(settings.tessdata_dir)
+        if not data_directory.is_dir():
+            raise unprocessable("TESSDATA_DIR에 지정한 언어 데이터 폴더를 찾을 수 없습니다. .env의 경로를 확인해 주세요.")
+        config = f'--tessdata-dir "{data_directory}"'
+    return pytesseract, config
+
+
 def _ocr_image(path: Path) -> str:
     try:
         from PIL import Image
@@ -15,25 +36,36 @@ def _ocr_image(path: Path) -> str:
     except ImportError as error:
         raise unprocessable("이미지 OCR 패키지가 설치되지 않았습니다. requirements.txt의 OCR 의존성을 설치해 주세요.") from error
     try:
+        pytesseract, config = _tesseract_options()
         with Image.open(path) as image:
-            return pytesseract.image_to_string(image, lang="kor+eng")
+            return pytesseract.image_to_string(image, lang="kor+eng", config=config)
     except pytesseract.TesseractNotFoundError as error:
         raise unprocessable("Tesseract OCR 엔진 또는 한국어 언어 데이터(kor)가 설치되지 않았습니다.") from error
+    except pytesseract.TesseractError as error:
+        raise unprocessable("Tesseract가 한국어 언어 데이터(kor)를 읽을 수 없습니다. TESSDATA_DIR 경로와 kor.traineddata 파일을 확인해 주세요.") from error
 
 
 def _ocr_pdf(path: Path) -> str:
     try:
         from pdf2image import convert_from_path
+        from pdf2image.exceptions import PDFInfoNotInstalledError, PDFPageCountError, PDFSyntaxError
         import pytesseract
     except ImportError as error:
         raise unprocessable("스캔 PDF OCR 패키지가 설치되지 않았습니다. requirements.txt의 OCR 의존성을 설치해 주세요.") from error
     try:
+        pytesseract, config = _tesseract_options()
         pages = convert_from_path(str(path))
-        return "\n".join(pytesseract.image_to_string(page, lang="kor+eng") for page in pages)
+        return "\n".join(pytesseract.image_to_string(page, lang="kor+eng", config=config) for page in pages)
     except pytesseract.TesseractNotFoundError as error:
         raise unprocessable("Tesseract OCR 엔진 또는 한국어 언어 데이터(kor)가 설치되지 않았습니다.") from error
+    except pytesseract.TesseractError as error:
+        raise unprocessable("Tesseract가 한국어 언어 데이터(kor)를 읽을 수 없습니다. TESSDATA_DIR 경로와 kor.traineddata 파일을 확인해 주세요.") from error
+    except PDFInfoNotInstalledError as error:
+        raise unprocessable("스캔 PDF OCR에 필요한 Poppler를 찾을 수 없습니다. Poppler의 bin 폴더를 PATH에 추가한 뒤 서버를 다시 시작해 주세요.") from error
+    except (PDFPageCountError, PDFSyntaxError) as error:
+        raise unprocessable("스캔 PDF의 페이지 정보를 읽을 수 없습니다. 암호화·손상 여부를 확인하거나 다른 PDF 뷰어에서 다시 저장한 파일을 업로드해 주세요.") from error
     except Exception as error:
-        raise unprocessable("스캔 PDF를 OCR로 변환할 수 없습니다. Poppler 설치와 파일 상태를 확인해 주세요.") from error
+        raise unprocessable("스캔 PDF OCR 처리 중 오류가 발생했습니다. 파일 상태와 OCR 실행 환경을 확인해 주세요.") from error
 
 
 def _extract_legacy(path: Path) -> str:

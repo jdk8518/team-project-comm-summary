@@ -11,6 +11,8 @@ class Settings:
     chunk_overlap_chars: int = int(os.getenv("CHUNK_OVERLAP_CHARS", "500"))
     max_analysis_chunks: int = int(os.getenv("MAX_ANALYSIS_CHUNKS", "4000"))
     openai_model: str = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
+    tesseract_cmd: str = os.getenv("TESSERACT_CMD", "").strip()
+    tessdata_dir: str = os.getenv("TESSDATA_DIR", "").strip()
     default_categories: tuple[str, ...] = ("회의록", "공문", "보고서", "공고문")
     project_root: Path = Path(__file__).resolve().parents[2]
 

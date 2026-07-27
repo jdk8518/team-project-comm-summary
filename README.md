@@ -8,6 +8,24 @@ PDF, DOC, DOCX, HWP, HWPX, PPT, PPTX, TXT, JPG, JPEG, PNG, TIFF. DOC·HWP·PPT�
 
 Windows에서 이미지 OCR 또는 스캔 PDF OCR을 사용하려면 Tesseract와 Poppler를 별도로 설치하고, 두 실행 파일 경로를 `PATH`에 추가해야 합니다. OCR 엔진 또는 언어 데이터가 없으면 추출 요청은 안전한 오류 메시지로 종료되며 원본 파일은 수정하지 않습니다.
 
+### 스캔 PDF OCR 준비(Windows)
+
+스캔 PDF는 텍스트 레이어가 없어 Poppler로 페이지 이미지를 만들고 Tesseract로 텍스트를 읽습니다. Poppler와 Tesseract(한국어 언어 데이터 `kor` 포함)를 설치한 뒤, 각 설치 경로의 `Library\\bin` 또는 `bin` 폴더를 Windows `PATH`에 추가하세요. 새 PowerShell 창에서 아래 명령이 성공해야 합니다.
+
+```powershell
+pdftoppm -v
+tesseract --list-langs
+```
+
+두 번째 명령의 출력에 `kor`가 없으면 Tesseract 한국어 언어 데이터를 추가로 설치해야 합니다. 설치 후 Uvicorn 서버를 다시 시작하고 스캔 PDF를 다시 업로드하세요. 텍스트를 선택·복사할 수 있는 일반 PDF는 OCR 도구 없이 처리됩니다.
+
+CMD에서는 `tesseract --list-langs`가 성공하지만 Uvicorn에서만 OCR 오류가 나면, 실행 중인 서버가 다른 PATH를 사용 중인 경우입니다. `.env`에 실행 파일과 언어 데이터 경로를 직접 지정한 뒤 서버를 재시작하세요.
+
+```env
+TESSERACT_CMD=C:\Program Files\Tesseract-OCR\tesseract.exe
+TESSDATA_DIR=C:\Users\jdk85\AppData\Local\Tesseract-OCR\tessdata
+```
+
 ## 실행 방법
 
 > 이 저장소는 FastAPI 기반 Python 프로젝트입니다. `package.json`과 Node 의존성을 사용하지 않으므로 `npm install`을 실행하지 않습니다. 의존성 설치에는 아래의 `pip install -r requirements.txt` 명령을 사용합니다.

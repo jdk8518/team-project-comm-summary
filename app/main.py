@@ -4,9 +4,9 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
-from app.api.routes import documents, health
-
 load_dotenv()
+
+from app.api.routes import documents, health
 
 app = FastAPI(title="문서 분석 MVP", version="1.0.0")
 app.include_router(health.router)

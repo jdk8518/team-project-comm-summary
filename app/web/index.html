@@ -28,7 +28,7 @@
   </section>
 
   <section id="processing" class="panel" hidden aria-live="polite"><span class="status"><span class="spinner"></span><span id="processing-message">처리 중입니다.</span></span></section>
-  <section id="error-panel" class="panel notice error" hidden aria-live="assertive"><strong>요청을 완료하지 못했습니다.</strong><p id="error-message"></p><p>파일 형식·크기·내용 및 AI 설정을 확인한 뒤 다시 시도해 주세요.</p><button id="back-to-upload" class="secondary" type="button">업로드 화면으로 이동</button></section>
+  <section id="error-panel" class="panel notice error" hidden aria-live="assertive"><strong id="error-title">요청을 완료하지 못했습니다.</strong><p id="error-message"></p><p id="error-guidance">파일 형식·크기·내용 및 AI 설정을 확인한 뒤 다시 시도해 주세요.</p><button id="back-to-upload" class="secondary" type="button">업로드 화면으로 이동</button></section>
 
   <main id="result" hidden>
     <section class="panel"><h2>문서 정보</h2><div id="document-info" class="grid"></div></section>
@@ -75,7 +75,22 @@
     }
     function setProcessing(message) { processingMessage.textContent = message; processing.hidden = false; analyzeButton.disabled = true; }
     function resetState() { processing.hidden = true; errorPanel.hidden = true; result.hidden = true; analyzeButton.disabled = false; currentResult = null; }
-    function showError(message) { processing.hidden = true; result.hidden = true; errorMessage.textContent = message; errorPanel.hidden = false; analyzeButton.disabled = false; }
+    function showError(message) {
+      const errorTitle = document.getElementById('error-title');
+      const errorGuidance = document.getElementById('error-guidance');
+      processing.hidden = true; result.hidden = true; errorMessage.textContent = message;
+      if (message.includes('Poppler')) {
+        errorTitle.textContent = '파일 추출(OCR) 단계에서 오류가 발생했습니다.';
+        errorGuidance.textContent = '스캔 PDF는 Poppler와 Tesseract OCR이 필요합니다. 설치 후 pdftoppm과 tesseract 명령이 터미널에서 실행되는지 확인한 뒤 문서를 다시 업로드해 주세요. 결과 저장 단계의 오류가 아닙니다.';
+      } else if (message.includes('Tesseract')) {
+        errorTitle.textContent = '파일 추출(OCR) 단계에서 오류가 발생했습니다.';
+        errorGuidance.textContent = 'Tesseract OCR 엔진과 한국어 언어 데이터(kor)를 설치한 뒤 tesseract --list-langs 명령에서 kor가 보이는지 확인해 주세요.';
+      } else {
+        errorTitle.textContent = '요청을 완료하지 못했습니다.';
+        errorGuidance.textContent = '파일 형식·크기·내용 및 AI 설정을 확인한 뒤 다시 시도해 주세요.';
+      }
+      errorPanel.hidden = false; analyzeButton.disabled = false;
+    }
     function render(data) {
       const doc = data.document || {}, analysis = data.analysis || {}, summary = data.summary || {}, verification = data.verification || {};
       document.getElementById('document-info').innerHTML = [['파일명', doc.file_name], ['파일 형식', doc.file_type], ['파일 크기', doc.file_size ? formatBytes(doc.file_size) : '확인 필요'], ['제목', doc.title], ['소속 기관', doc.organization], ['소속 부서', doc.department], ['기준 일자', doc.reference_date], ['처리 상태', data.status]].map(([label, value]) => `<div class="item"><span class="label">${label}</span>${escapeHtml(value || '확인 필요')}</div>`).join('');

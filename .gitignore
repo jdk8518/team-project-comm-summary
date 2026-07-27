@@ -19,8 +19,12 @@ logs/
 *.log
 tmp/
 temp/
+.test-run-tmp/
 
 # User-uploaded or operational documents
 other_docs/
 uploads/
 output/
+
+# Presentation and submission media
+*.mp4
