@@ -8,27 +8,19 @@
             Backend: FastAPI
             AI Workflow: LangChain, LangGraph
             Document Processing: PDF, DOCX, TXT, HWPX, PPTX, Image PDF, JPG, JPEG, PNG, TIFF
-###         Document Processing: PDF, DOCX, TXT, HWPX, PPTX
             Frontend: 추후 MVP 단계에서 결정
             Database: 초기 단계에서는 사용하지 않음
-- 요구사항 문서: `./docs/requirements-jdk2.md`
-- 기능 분해 문서: `./docs/function-breakdown-jdk2.md`
-- MVP 계획 문서: `./docs/MVP-plan-jdk2.md`
-
-##- 요구사항 문서: `./docs/requirements.md`
-##- 기능 분해 문서: `./docs/function-breakdown.md`
-##- MVP 계획 문서: `./docs/MVP-plan.md`
+- 요구사항 문서: `./docs/requirements.md`
+- 기능 분해 문서: `./docs/function-breakdown.md`
+- MVP 계획 문서: `./docs/MVP-plan.md`
 
 ## 2. 작업 시작 순서
 
 1. `./AGENTS.md`를 읽는다.
 2. `./README.md`를 읽는다.
-3. `./docs/requirements-jdk2.md`를 읽는다.
-4. `./docs/function-breakdown-jdk2.md`를 읽는다.
-5. `./docs/MVP-plan-jdk2.md`를 읽는다.
-##3. `./docs/requirements.md`를 읽는다.
-##4. `./docs/function-breakdown.md`를 읽는다.
-##5. `./docs/MVP-plan.md`를 읽는다.
+3. `./docs/requirements.md`를 읽는다.
+4. `./docs/function-breakdown.md`를 읽는다.
+5. `./docs/MVP-plan.md`를 읽는다.
 6. 현재 브랜치와 `git status`를 확인한다.
 7. 담당 기능과 관련된 코드와 테스트를 확인한다.
 8. 변경할 파일과 구현 계획을 제시한다.

@@ -23,7 +23,7 @@ CMD에서는 `tesseract --list-langs`가 성공하지만 Uvicorn에서만 OCR �
 
 ```env
 TESSERACT_CMD=C:\Program Files\Tesseract-OCR\tesseract.exe
-TESSDATA_DIR=C:\Users\jdk85\AppData\Local\Tesseract-OCR\tessdata
+TESSDATA_DIR=C:\Users\user-id\AppData\Local\Tesseract-OCR\tessdata
 ```
 
 ## 실행 방법
