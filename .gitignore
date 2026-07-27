@@ -1,0 +1,30 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+.env copy.example
+
+# Python virtual environments and bytecode
+.venv/
+venv/
+**/__pycache__/
+*.py[cod]
+
+# Test, runtime, log, and temporary files
+.pytest_cache/
+.runtime/
+.test-tmp/
+tmp-pytest-results/
+logs/
+*.log
+tmp/
+temp/
+.test-run-tmp/
+
+# User-uploaded or operational documents
+other_docs/
+uploads/
+output/
+
+# Presentation and submission media
+*.mp4

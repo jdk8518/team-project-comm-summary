@@ -7,20 +7,28 @@
 - 주요 기술: Language: Python 3
             Backend: FastAPI
             AI Workflow: LangChain, LangGraph
-            Document Processing: PDF, DOCX, TXT, HWPX, PPTX
+            Document Processing: PDF, DOCX, TXT, HWPX, PPTX, Image PDF, JPG, JPEG, PNG, TIFF
+###         Document Processing: PDF, DOCX, TXT, HWPX, PPTX
             Frontend: 추후 MVP 단계에서 결정
             Database: 초기 단계에서는 사용하지 않음
-- 요구사항 문서: `./docs/requirements.md`
-- 기능 분해 문서: `./docs/function-breakdown.md`
-- MVP 계획 문서: `./docs/MVP-plan.md`
+- 요구사항 문서: `./docs/requirements-jdk2.md`
+- 기능 분해 문서: `./docs/function-breakdown-jdk2.md`
+- MVP 계획 문서: `./docs/MVP-plan-jdk2.md`
+
+##- 요구사항 문서: `./docs/requirements.md`
+##- 기능 분해 문서: `./docs/function-breakdown.md`
+##- MVP 계획 문서: `./docs/MVP-plan.md`
 
 ## 2. 작업 시작 순서
 
 1. `./AGENTS.md`를 읽는다.
 2. `./README.md`를 읽는다.
-3. `./docs/requirements.md`를 읽는다.
-4. `./docs/function-breakdown.md`를 읽는다.
-5. `./docs/MVP-plan.md`를 읽는다.
+3. `./docs/requirements-jdk2.md`를 읽는다.
+4. `./docs/function-breakdown-jdk2.md`를 읽는다.
+5. `./docs/MVP-plan-jdk2.md`를 읽는다.
+##3. `./docs/requirements.md`를 읽는다.
+##4. `./docs/function-breakdown.md`를 읽는다.
+##5. `./docs/MVP-plan.md`를 읽는다.
 6. 현재 브랜치와 `git status`를 확인한다.
 7. 담당 기능과 관련된 코드와 테스트를 확인한다.
 8. 변경할 파일과 구현 계획을 제시한다.
@@ -57,7 +65,7 @@
 - API Key, 비밀번호, Token을 코드에 작성하지 않는다.
 - `.env` 파일을 Commit하지 않는다.
 - 개인정보와 인증정보를 로그에 출력하지 않는다.
-- 민감정보가 발견되면 작업을 중단하고 노출 범위를 보고한다.
+- 민감정보가 발견되면 작업을 중단하고 노출 범위를 보고한다.![alt text](image.png)
 
 ## 7. 완료 보고
 
@@ -75,3 +83,14 @@ HWPX 읽기, 수정, 생성, 검증 기능은 [`python-hwpx`](https://github.com
 `HwpxDocument.open()`으로 원본을 열고, 결과는 예를 들어 `output/report-updated.hwpx`처럼 새 경로에 저장합니다. 개발·테스트 중 사용자 원본을 덮어쓰지 않습니다. HWP(v5 바이너리)는 지원 대상이 아니므로 먼저 HWPX로 변환해야 합니다.
 
 문서 쓰기 후에는 `save_to_path(..., return_report=True)`의 `MutationReport`를 확인하고, 비민감 HWPX 테스트 픽스처로 회귀 테스트를 추가합니다. 테스트는 요청한 내용 변경과 저장 결과의 라이브러리 검증 통과를 모두 확인해야 합니다. 개인정보·기밀·운영 문서는 저장소에 커밋하지 않습니다.
+
+## 9. 이미지·스캔 PDF OCR 처리
+
+- OCR 지원 대상은 이미지 기반 PDF와 `JPG`, `JPEG`, `PNG`, `TIFF` 이미지 문서이다. 텍스트 PDF는 기존 PDF 텍스트 추출을 우선 사용하고, 추출 가능한 텍스트가 없거나 부족할 때만 OCR을 적용한다.
+- 업로드 시 파일 확장자, MIME 타입, 파일 크기, 페이지 수(또는 이미지 수)를 검증하고, 손상되었거나 암호화되어 처리할 수 없는 파일은 원인을 포함한 안전한 오류 메시지로 반환한다.
+- OCR 결과는 페이지 또는 이미지 단위로 원문 순서를 유지해 텍스트와 메타데이터(파일명, 페이지 번호, 처리 상태, 경고)를 함께 관리한다. 빈 결과, 저신뢰 결과, 회전·기울어짐, 읽을 수 없는 페이지는 누락시키지 말고 경고로 표시한다.
+- 한국어 문서 처리를 기본으로 하며, 지원 언어와 OCR 엔진·언어 데이터는 `requirements.txt` 또는 `pyproject.toml`에 명시한다. 시스템 설치가 필요한 OCR 엔진은 README에 설치·실행 방법을 함께 기록한다.
+- 이미지 전처리(회전 보정, 해상도 조정, 대비 조정 등)는 OCR 정확도 향상에 필요한 범위에서만 적용하며, 사용자 원본 파일을 수정하거나 덮어쓰지 않는다. 중간 산출물과 변환 파일은 임시 또는 출력 경로에 저장하고 정리 정책을 명시한다.
+- OCR 텍스트는 요약·검증 기능에 전달하기 전에 원본 파일, 페이지 번호와의 추적 정보를 유지한다. AI가 생성한 요약이나 검증 결과를 OCR 원문 자체로 표시하지 않는다.
+- 개인정보·기밀정보가 포함될 수 있는 이미지와 OCR 결과를 로그, 테스트 픽스처, 저장소에 기록하지 않는다. 외부 OCR API를 사용할 경우 전송 범위, 보관 정책, API 키 관리, 비용을 사전에 확인한다.
+- 테스트에는 한국어가 포함된 정상 이미지, 다중 페이지 스캔 PDF, 회전된 이미지, 텍스트가 없는 이미지, 손상·지원하지 않는 파일을 포함한다. 추출 텍스트, 페이지 순서, 경고 및 오류 처리를 확인한다.
