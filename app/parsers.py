@@ -7,14 +7,20 @@ app/parsers.py
   - OCR 시도 후에도 텍스트 부족이면 기존과 동일한 422 오류를 발생시킴
   - 기존 API 경로·오류 메시지 형식은 유지
 """
-import os
 import io
+import os
 import re
-from typing import Tuple, Dict, Any, List
+import zipfile
+from pathlib import Path
+from tempfile import NamedTemporaryFile
+from typing import Any, Dict, List
 
-ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt", ".hwp", ".hwpx", ".pptx"}
+ALLOWED_EXTENSIONS = frozenset({".pdf", ".docx", ".txt", ".hwp", ".hwpx", ".pptx"})
 MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024   # 50 MB
 OCR_MIN_CHARS = 20                        # 이 기준 미만이면 OCR 폴백 시도
+
+OCR_RENDER_SCALE = 2.0
+EXTRACTORS = {"txt": "_extract_txt", "pdf": "_extract_pdf", "docx": "_extract_docx", "hwp": "_extract_hwp", "hwpx": "_extract_hwp", "pptx": "_extract_pptx"}
 
 
 class DocumentParsingError(Exception):
@@ -30,7 +36,7 @@ class DocumentParsingError(Exception):
 
 def validate_file_metadata(filename: str, size_bytes: int) -> str:
     """파일 확장자와 용량(50MB)을 검증하고 포맷 문자열을 반환합니다."""
-    ext = os.path.splitext(filename)[1].lower()
+    ext = Path(filename).suffix.lower()
     if ext not in ALLOWED_EXTENSIONS:
         raise DocumentParsingError(
             f"지원하지 않는 파일 형식입니다. (지원 형식: PDF, DOCX, TXT, HWP, HWPX, PPTX / 입력: {ext})",
@@ -53,20 +59,10 @@ def extract_text_from_file(file_bytes: bytes, file_ext: str) -> str:
     파일 형식에 맞게 텍스트를 추출합니다.
     PDF의 경우 텍스트가 부족하면 OCR(pytesseract)으로 재시도합니다.
     """
-    ext = file_ext.lower().replace(".", "")
+    ext = file_ext.lower().lstrip(".")
     try:
-        if ext == "txt":
-            extracted_text = _extract_txt(file_bytes)
-        elif ext == "pdf":
-            extracted_text = _extract_pdf(file_bytes)
-        elif ext == "docx":
-            extracted_text = _extract_docx(file_bytes)
-        elif ext in ("hwpx", "hwp"):
-            extracted_text = _extract_hwp(file_bytes)
-        elif ext == "pptx":
-            extracted_text = _extract_pptx(file_bytes)
-        else:
-            extracted_text = ""
+        extractor_name = EXTRACTORS.get(ext)
+        extracted_text = globals()[extractor_name](file_bytes) if extractor_name else ""
     except DocumentParsingError:
         raise
     except Exception as e:
@@ -103,8 +99,8 @@ def _extract_pdf(file_bytes: bytes) -> str:
     """
     try:
         import fitz  # PyMuPDF
-        doc = fitz.open(stream=file_bytes, filetype="pdf")
-        pages_text = [page.get_text() for page in doc]
+        with fitz.open(stream=file_bytes, filetype="pdf") as doc:
+            pages_text = [page.get_text() for page in doc]
         text = "\n\n".join(pages_text)
     except Exception as e:
         raise DocumentParsingError(f"PDF 파싱 실패: {str(e)}", status_code=422)
@@ -126,11 +122,12 @@ def _ocr_pdf_fallback(file_bytes: bytes) -> str:
         from PIL import Image
         import pytesseract
 
-        doc = fitz.open(stream=file_bytes, filetype="pdf")
         ocr_texts: List[str] = []
-        for page in doc:
+        with fitz.open(stream=file_bytes, filetype="pdf") as doc:
+            pages = list(doc)
+        for page in pages:
             # 페이지를 2배 해상도 이미지로 렌더링
-            mat = fitz.Matrix(2.0, 2.0)
+            mat = fitz.Matrix(OCR_RENDER_SCALE, OCR_RENDER_SCALE)
             pix = page.get_pixmap(matrix=mat)
             img_bytes = pix.tobytes("png")
             img = Image.open(io.BytesIO(img_bytes))
@@ -156,9 +153,6 @@ def _extract_docx(file_bytes: bytes) -> str:
 
 def _extract_hwp(file_bytes: bytes) -> str:
     """Extract HWP v5 with docpler or HWPX with python-hwpx."""
-    import zipfile
-    from tempfile import NamedTemporaryFile
-
     # HWP v5 is an OLE Compound File, not an HWPX ZIP package.
     if file_bytes.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"):
         temp_path = None

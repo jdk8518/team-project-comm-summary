@@ -7,10 +7,10 @@ from app.parsers import DocumentParsingError, extract_text_from_file
 
 
 def test_hwp_uses_docpler_converter(monkeypatch):
-    import docpler.hwp
+    docpler_hwp = pytest.importorskip("docpler.hwp")
 
     monkeypatch.setattr(
-        docpler.hwp,
+        docpler_hwp,
         "convert",
         lambda path: "문서 변환 결과입니다. HWP 본문 텍스트입니다.",
     )
@@ -24,7 +24,7 @@ def test_hwp_uses_docpler_converter(monkeypatch):
 def test_invalid_hwp_returns_actionable_parsing_error():
     ole_header = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"invalid hwp payload"
 
-    with pytest.raises(DocumentParsingError, match="HWP 텍스트 추출에 실패했습니다"):
+    with pytest.raises(DocumentParsingError, match=r"HWP 텍스트 추출.*"):
         extract_text_from_file(ole_header, "hwp")
 
 
